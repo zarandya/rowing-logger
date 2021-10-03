@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">PM5Bluetooth</string>
+    <string name="connect">Connect PM5</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="connecting">...</string>
+    <string name="bluetooth_service_channel_name">PM5 Bluetooth Service</string>
+    <string name="accel_log_service_name">Acceleration Log Service</string>
+    <string name="rate_monitor_btn_text">Rate Monitor</string>
+</resources>
