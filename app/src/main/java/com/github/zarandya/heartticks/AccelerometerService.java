@@ -135,7 +135,11 @@ public class AccelerometerService extends Service implements SensorEventListener
             if (!externalAcl.isDirectory()) {
                 externalAcl.mkdir();
             }
-            filename = externalAcl.getPath() + "/RateMonitor" + df.format(new Date()) + ".acc";
+            Date date = new Date();
+            filename = externalAcl.getPath() + "/RateMonitor" + df.format(date) + ".acc";
+            final long time_unix = date.getTime();
+            Log.d("ACL_TIME", "First event unix time: " + time_unix);
+            Log.d("ACL_TIME", "First event formatted time: " + df.format(date));
 
             out = new DataOutputStream(new FileOutputStream(new File(filename)));
 
@@ -244,9 +248,10 @@ public class AccelerometerService extends Service implements SensorEventListener
                 if (firstEvent) {
                     firstEvent = false;
                     out.writeChar(60001);
-                    out.writeChar(1);
-                    Date date = new Date();
-                    final long time = date.getTime();
+                    out.writeChar(2);
+                    final long elapsedTimeNanos = SystemClock.elapsedRealtimeNanos();
+                    final long currentTimeMillis = System.currentTimeMillis();
+                    final long time = ((currentTimeMillis * 1000000) + event.timestamp - elapsedTimeNanos) / 1000000;
                     out.writeChar(60002);
                     out.writeChar((int) (time >> 48) & 0xffff);
                     out.writeChar(60002);
@@ -254,7 +259,7 @@ public class AccelerometerService extends Service implements SensorEventListener
                     out.writeChar(60002);
                     out.writeChar((int) (time >> 16) & 0xffff);
                     out.writeChar(60002);
-                    out.writeChar((int) time >> 0xffff);
+                    out.writeChar((int) time & 0xffff);
                     logTimeBaseMillis = time;
                     logTimeEllapsedBaseNanos = event.timestamp;
                     logNextTimeMillis = 0;
