@@ -35,7 +35,9 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Parcel;
 import android.util.Log;
+import android.view.View;
 import android.widget.Button;
+import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import java.io.File;
@@ -81,8 +83,13 @@ public class MainActivity extends AppCompatActivity {
 
     public static final String ACTION_SET_FILE_TO_SEND = "action_set_file_to_snd";
     public static final String EXTRA_FILE_TO_SEND = "extra_file_to_send";
+    public static final String EXTRA_DEVICE_NAME = "extra_device_name";
 
     private String fileToSend = null;
+
+    private BluetoothAdapter bluetoothAdapter;
+
+    private boolean pm5BluetoothConnected = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -113,7 +120,12 @@ public class MainActivity extends AppCompatActivity {
         button.setOnClickListener((v) -> {
             Intent intent = new Intent(this, BluetoothService.class);
             intent.setAction(ACTION_CONNECT_BUTTON_PRESSED);
-            startService(intent);
+            if (pm5BluetoothConnected) {
+                startService(intent);
+            }
+            else {
+                popupBluetoothDeviceSelector(button, intent);
+            }
         });
 
         accelLogButton = findViewById(R.id.accel_log_btn);
@@ -139,6 +151,8 @@ public class MainActivity extends AppCompatActivity {
         Intent queryState = new Intent(this, BluetoothService.class);
         queryState.setAction(ACTION_QUERY_STATE);
         startService(queryState);
+
+        bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
     }
 
     @Override
@@ -146,6 +160,23 @@ public class MainActivity extends AppCompatActivity {
         super.onDestroy();
         // Don't forget to unregister the ACTION_FOUND receiver.
         unregisterReceiver(receiver);
+    }
+
+    private final void popupBluetoothDeviceSelector(View view, Intent intent) {
+        PopupMenu menu = new PopupMenu(this, view);
+
+        Set<BluetoothDevice> devices = bluetoothAdapter.getBondedDevices();
+        for (BluetoothDevice dev : devices) {
+            if (dev.getName().startsWith("PM5")) {
+                menu.getMenu().add(dev.getAlias());
+            }
+        }
+        menu.setOnMenuItemClickListener((item) -> {
+            intent.putExtra(EXTRA_DEVICE_NAME, item.getTitle().toString());
+            startService(intent);
+            return true;
+        });
+        menu.show();
     }
 
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
@@ -164,12 +195,15 @@ public class MainActivity extends AppCompatActivity {
                 int state = intent.getIntExtra(EXTRA_SERVICE_STATE, -1);
                 if (state == STATE_IDLE) {
                     button.setText(R.string.connect);
+                    pm5BluetoothConnected = false;
                 }
                 else if (state == STATE_CONNECTED) {
                     button.setText(R.string.disconnect);
+                    pm5BluetoothConnected = true;
                 }
                 else {
                     button.setText(R.string.connecting);
+                    pm5BluetoothConnected = false;
                 }
             }
             else if (action.equals(ACTION_RATE_UPDATE)) {

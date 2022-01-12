@@ -12,6 +12,7 @@ import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
+import android.companion.BluetoothDeviceFilter;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
@@ -39,6 +40,7 @@ import static android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALU
 import static android.os.Build.VERSION.SDK_INT;
 import static androidx.core.app.NotificationCompat.PRIORITY_LOW;
 import static com.github.zarandya.heartticks.MainActivity.ACTION_SET_FILE_TO_SEND;
+import static com.github.zarandya.heartticks.MainActivity.EXTRA_DEVICE_NAME;
 import static com.github.zarandya.heartticks.MainActivity.EXTRA_FILE_TO_SEND;
 import static com.github.zarandya.heartticks.R.string.bluetooth_service_channel_name;
 import static java.util.TimeZone.getTimeZone;
@@ -65,6 +67,8 @@ public class BluetoothService extends Service {
     private BluetoothGatt bluetoothGatt;
     private GattoolFileWriter gattCallback;
     private String filename;
+
+    private String deviceName = null;
 
     @Override
     public void onCreate() {
@@ -104,6 +108,7 @@ public class BluetoothService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent.getAction().equals(ACTION_CONNECT_BUTTON_PRESSED)) {
             if (state == STATE_IDLE) {
+                deviceName = intent.getStringExtra(EXTRA_DEVICE_NAME);
                 startConnect();
             }
             else if (state == STATE_CONNECTED) {
@@ -128,9 +133,10 @@ public class BluetoothService extends Service {
             }
             filename = externalGatt.getPath() + "/Concept2Gatt_" + df.format(new Date()) + ".c2.gatt";
 
+
             Set<BluetoothDevice> devices = bluetoothAdapter.getBondedDevices();
             for (BluetoothDevice dev : devices) {
-                if (dev.getName().startsWith("PM5")) {
+                if ((deviceName == null) ? dev.getName().startsWith("PM5") : deviceName.equals(dev.getAlias())) {
                     String mac = dev.getAddress();
                     createGattCallback(filename, mac);
                     connect(dev);
