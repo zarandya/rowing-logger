@@ -20,11 +20,9 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
-import java.io.BufferedWriter;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -35,7 +33,6 @@ import static androidx.core.app.NotificationCompat.PRIORITY_LOW;
 import static com.github.zarandya.heartticks.MainActivity.ACTION_SET_FILE_TO_SEND;
 import static com.github.zarandya.heartticks.MainActivity.EXTRA_FILE_TO_SEND;
 import static com.github.zarandya.heartticks.R.string.accel_log_service_name;
-import static com.github.zarandya.heartticks.R.string.bluetooth_service_channel_name;
 import static java.util.TimeZone.getTimeZone;
 
 public class AccelerometerService extends Service implements SensorEventListener {
@@ -50,7 +47,7 @@ public class AccelerometerService extends Service implements SensorEventListener
     
     private int state;
     
-    public static final int STATE_IDLE = BluetoothService.STATE_IDLE; // same as STATE_IDLE in BluetoothService
+    public static final int STATE_IDLE = BluetoothService.SERVICE_STATE_IDLE; // same as STATE_IDLE in BluetoothService
     public static final int STATE_RECORDING_ACCEL_DATA = 1;
     public static final int STATE_SENSOR_FAILED = 2;
     

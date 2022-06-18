@@ -8,12 +8,13 @@ import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
-import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
-import android.companion.BluetoothDeviceFilter;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
@@ -24,7 +25,6 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.channels.Channel;
 import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.Date;
@@ -37,8 +37,12 @@ import static android.app.NotificationManager.IMPORTANCE_LOW;
 import static android.bluetooth.BluetoothGatt.GATT_SUCCESS;
 import static android.bluetooth.BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE;
 import static android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
 import static android.os.Build.VERSION.SDK_INT;
 import static androidx.core.app.NotificationCompat.PRIORITY_LOW;
+import static com.github.zarandya.heartticks.BluetoothHrmService.ACTION_HR_VALUE_UPDATE;
+import static com.github.zarandya.heartticks.BluetoothHrmService.EXTRA_HR_VALUE;
 import static com.github.zarandya.heartticks.MainActivity.ACTION_SET_FILE_TO_SEND;
 import static com.github.zarandya.heartticks.MainActivity.EXTRA_DEVICE_NAME;
 import static com.github.zarandya.heartticks.MainActivity.EXTRA_FILE_TO_SEND;
@@ -47,12 +51,11 @@ import static java.util.TimeZone.getTimeZone;
 
 public class BluetoothService extends Service {
 
-    public static final int STATE_IDLE = 0;
-    public static final int STATE_CONNECTING = 1;
-    public static final int STATE_SUBSCRIBING = 2;
-    public static final int STATE_CONNECTED = 3;
-    public static final int STATE_DISCONNECTING = 4;
-    public static final int STATE_ERR_DISCONNECT = 5;
+    public static final int SERVICE_STATE_IDLE = 0;
+    public static final int SERVICE_STATE_CONNECTING = 1;
+    public static final int SERVICE_STATE_SUBSCRIBING = 2;
+    public static final int SERVICE_STATE_CONNECTED = 3;
+    public static final int SERVICE_STATE_DISCONNECTING = 4;
 
     public static final String ACTION_CONNECT_BUTTON_PRESSED = "action_connect_button_pressed";
     public static final String ACTION_QUERY_STATE = "sction_query_state";
@@ -62,13 +65,15 @@ public class BluetoothService extends Service {
     public static final int NOTIFICATION_ID = 83;
     public static final String CHANNEL_ID = "io.github.zarandya.beatrate.BLUETOOTH_SERVICE_NOTIFICATION";
 
-    private int state = STATE_IDLE;
+    private int state = SERVICE_STATE_IDLE;
     private BluetoothAdapter bluetoothAdapter;
     private BluetoothGatt bluetoothGatt;
     private GattoolFileWriter gattCallback;
     private String filename;
 
     private String deviceName = null;
+
+    private int hrFromBluetoothHrm = 0;
 
     @Override
     public void onCreate() {
@@ -97,6 +102,11 @@ public class BluetoothService extends Service {
                 }
             }
         }, 5000, 5000);
+
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(ACTION_HR_VALUE_UPDATE);
+        registerReceiver(receiver, filter);
+        LocalBroadcastManager.getInstance(this).registerReceiver(receiver, filter);
     }
 
     @Override
@@ -107,11 +117,11 @@ public class BluetoothService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent.getAction().equals(ACTION_CONNECT_BUTTON_PRESSED)) {
-            if (state == STATE_IDLE) {
+            if (state == SERVICE_STATE_IDLE) {
                 deviceName = intent.getStringExtra(EXTRA_DEVICE_NAME);
                 startConnect();
             }
-            else if (state == STATE_CONNECTED) {
+            else if (state == SERVICE_STATE_CONNECTED) {
                 startDisconnect();
             }
         }
@@ -122,7 +132,7 @@ public class BluetoothService extends Service {
     }
     
     private void startConnect() {
-        setState(STATE_CONNECTING);
+        setState(SERVICE_STATE_CONNECTING);
         try {
             @SuppressLint("SimpleDateFormat") SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH-mm-ss'Z'");
             df.setTimeZone(getTimeZone("UTC"));
@@ -136,7 +146,13 @@ public class BluetoothService extends Service {
 
             Set<BluetoothDevice> devices = bluetoothAdapter.getBondedDevices();
             for (BluetoothDevice dev : devices) {
-                if ((deviceName == null) ? dev.getName().startsWith("PM5") : deviceName.equals(dev.getAlias())) {
+                String name = null;
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    name = dev.getAlias();
+                }
+                if (name == null || name.length() == 0)
+                    name = dev.getName();
+                if ((deviceName == null) ? dev.getName().startsWith("PM5") : deviceName.equals(name)) {
                     String mac = dev.getAddress();
                     createGattCallback(filename, mac);
                     connect(dev);
@@ -150,8 +166,13 @@ public class BluetoothService extends Service {
     }
     
     private void startDisconnect() {
-        setState(STATE_DISCONNECTING);
-        unsubscribe(bluetoothGatt, C2_PM_CONTROL_SERVICE_UUID, C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID);
+        setState(SERVICE_STATE_DISCONNECTING);
+        try {
+            unsubscribe(bluetoothGatt, C2_PM_CONTROL_SERVICE_UUID, C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID);
+        }
+        catch (Exception e) {
+            errDisconnect();
+        }
     }
 
     private void errDisconnect() {
@@ -166,7 +187,7 @@ public class BluetoothService extends Service {
         }
         gattCallback = null;
         sendFileToShare();
-        setState(STATE_IDLE);
+        setState(SERVICE_STATE_IDLE);
     }
 
     private boolean connected = false;
@@ -183,7 +204,7 @@ public class BluetoothService extends Service {
         if (gattCallback == null)
             return;
         bluetoothGatt = device.connectGatt(this, false, gattCallback);
-        setState(STATE_SUBSCRIBING);
+        setState(SERVICE_STATE_SUBSCRIBING);
     }
 
     private void subscribe(BluetoothGatt gatt, UUID serviceId, UUID characteristicId) {
@@ -208,6 +229,26 @@ public class BluetoothService extends Service {
         try {
             gattCallback = new GattoolFileWriter(filename, "[" + mac.toLowerCase() + "][LE]> ") {
                 @Override
+                protected void editCharacteristicValueBeforeLog(BluetoothGattCharacteristic characteristic, byte[] value) {
+                    if (characteristic.getUuid().equals(C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID) &&
+                        value.length >= 10 &&
+                        value[0] == 0x32) {
+                        // Update heart rate from bluetooth hrm
+                        if (value[7] == (byte) 0xff) {
+                            value[7] = (byte) hrFromBluetoothHrm;
+                        }
+                    }
+                    if (characteristic.getUuid().equals(C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID) &&
+                            value.length >= 10 &&
+                            value[0] == 0x38) {
+                        // Update split/interval work heart rate from bluetooth hrm
+                        if (value[5] == 0) {
+                            value[5] = (byte) hrFromBluetoothHrm;
+                        }
+                    }
+                }
+
+                @Override
                 public void onPhyUpdate(BluetoothGatt gatt, int txPhy, int rxPhy, int status) {
                     super.onPhyUpdate(gatt, txPhy, rxPhy, status);
                     Log.d("GATT", "UPDATE tx: " + txPhy + " rx: " + rxPhy + " status: " + status);
@@ -223,7 +264,12 @@ public class BluetoothService extends Service {
                 public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
                     super.onConnectionStateChange(gatt, status, newState);
                     Log.d("GATT", "CONNECTION STATE CHANGE newState: " + newState + " status: " + status);
-                    gatt.discoverServices();
+                    if (newState == STATE_CONNECTED) {
+                        gatt.discoverServices();
+                    }
+                    if (newState == STATE_DISCONNECTED && (state == SERVICE_STATE_CONNECTED || state == SERVICE_STATE_SUBSCRIBING)) {
+                        connect(gatt.getDevice());
+                    }
                 }
 
                 @Override
@@ -241,7 +287,7 @@ public class BluetoothService extends Service {
                         }
                     }
 
-                    setState(STATE_SUBSCRIBING);
+                    setState(SERVICE_STATE_SUBSCRIBING);
                     subscribe(gatt, C2_PM_CONTROL_SERVICE_UUID, C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID);
                 }
 
@@ -279,16 +325,16 @@ public class BluetoothService extends Service {
                     super.onDescriptorWrite(gatt, descriptor, status);
                     Log.d("GATT", "DESCRIPTOR WRITE: " + descriptor.getUuid() + "value: " + Arrays.toString(descriptor.getValue()) + " status: " + status);
                     if (status == GATT_SUCCESS) {
-                        if (state == STATE_SUBSCRIBING) {
+                        if (state == SERVICE_STATE_SUBSCRIBING) {
                             UUID uuid = descriptor.getCharacteristic().getUuid();
                             if (uuid.equals(C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID)) {
                                 subscribe(gatt, C2_PM_CONTROL_SERVICE_UUID, C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID);
                             }
                             else if (uuid.equals(C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID)) {
-                                setState(STATE_CONNECTED);
+                                setState(SERVICE_STATE_CONNECTED);
                             }
                         }
-                        else if (state == STATE_DISCONNECTING) {
+                        else if (state == SERVICE_STATE_DISCONNECTING) {
                             UUID uuid = descriptor.getCharacteristic().getUuid();
                             if (uuid.equals(C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID)) {
                                 unsubscribe(gatt, C2_PM_CONTROL_SERVICE_UUID, C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID);
@@ -300,7 +346,7 @@ public class BluetoothService extends Service {
                                 gattCallback.close();
                                 gattCallback = null;
                                 sendFileToShare();
-                                setState(STATE_IDLE);
+                                setState(SERVICE_STATE_IDLE);
                             }
                         }
                     }
@@ -341,7 +387,7 @@ public class BluetoothService extends Service {
             state = s;
             ++stateChangeCounter;
             final long stateChangeCount = stateChangeCounter;
-            if (s == STATE_CONNECTED) {
+            if (s == SERVICE_STATE_CONNECTED) {
                 Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                         .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
                         .setContentText("Connected to " + bluetoothGatt.getDevice().getName())
@@ -353,7 +399,7 @@ public class BluetoothService extends Service {
             } else {
                 stopForeground(true);
             }
-            if (s != STATE_CONNECTED && s != STATE_IDLE) {
+            if (s != SERVICE_STATE_CONNECTED && s != SERVICE_STATE_IDLE) {
                 new Timer().schedule(new TimerTask() {
                     @Override
                     public void run() {
@@ -383,4 +429,20 @@ public class BluetoothService extends Service {
         broadcast.putExtra(EXTRA_FILE_TO_SEND, filename);
         LocalBroadcastManager.getInstance(this).sendBroadcast(broadcast);
     }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        // Don't forget to unregister the ACTION_FOUND receiver.
+        unregisterReceiver(receiver);
+    }
+
+    private final BroadcastReceiver receiver = new BroadcastReceiver() {
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (action.equals(ACTION_HR_VALUE_UPDATE)) {
+                hrFromBluetoothHrm = intent.getIntExtra(EXTRA_HR_VALUE, 0);
+            }
+        }
+    };
 }

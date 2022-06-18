@@ -1,39 +1,19 @@
 package com.github.zarandya.heartticks;
 
-import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
-import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothGatt;
-import android.bluetooth.BluetoothGattCallback;
-import android.bluetooth.BluetoothGattCharacteristic;
-import android.bluetooth.BluetoothGattDescriptor;
-import android.bluetooth.BluetoothGattService;
-import android.bluetooth.BluetoothManager;
-import android.bluetooth.BluetoothProfile;
-import android.bluetooth.le.BluetoothLeScanner;
-import android.bluetooth.le.ScanCallback;
-import android.bluetooth.le.ScanResult;
-import android.companion.AssociationRequest;
-import android.companion.BluetoothDeviceFilter;
-import android.companion.BluetoothLeDeviceFilter;
 import android.companion.CompanionDeviceManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.IntentSender;
-import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
-import android.os.Handler;
-import android.os.Parcel;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -41,40 +21,30 @@ import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import java.io.File;
-import java.io.IOException;
-import java.text.SimpleDateFormat;
-import java.util.Arrays;
-import java.util.Date;
 import java.util.Set;
-import java.util.StringTokenizer;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.UUID;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static android.Manifest.permission.READ_EXTERNAL_STORAGE;
 import static android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
-import static android.bluetooth.BluetoothGatt.GATT_SUCCESS;
-import static android.bluetooth.BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE;
-import static android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE;
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
-import static android.os.Build.VERSION.SDK_INT;
 import static com.github.zarandya.heartticks.AccelerometerService.ACTION_ACCEL_LOG_BUTTON_PRESSED;
 import static com.github.zarandya.heartticks.AccelerometerService.ACTION_RATE_UPDATE;
 import static com.github.zarandya.heartticks.AccelerometerService.EXTRA_RATE;
+import static com.github.zarandya.heartticks.BluetoothHrmService.ACTION_HRM_SERVICE_STATE_CHANGED;
+import static com.github.zarandya.heartticks.BluetoothHrmService.EXTRA_HR_VALUE;
 import static com.github.zarandya.heartticks.BluetoothService.ACTION_CONNECT_BUTTON_PRESSED;
 import static com.github.zarandya.heartticks.BluetoothService.ACTION_QUERY_STATE;
 import static com.github.zarandya.heartticks.BluetoothService.ACTION_SERVICE_STATE_CHANGED;
 import static com.github.zarandya.heartticks.BluetoothService.EXTRA_SERVICE_STATE;
-import static com.github.zarandya.heartticks.BluetoothService.STATE_CONNECTED;
-import static com.github.zarandya.heartticks.BluetoothService.STATE_IDLE;
+import static com.github.zarandya.heartticks.BluetoothService.SERVICE_STATE_CONNECTED;
+import static com.github.zarandya.heartticks.BluetoothService.SERVICE_STATE_IDLE;
+import static com.github.zarandya.heartticks.BluetoothHrmService.ACTION_HR_VALUE_UPDATE;
 import static java.util.TimeZone.getTimeZone;
 
 public class MainActivity extends AppCompatActivity {
 
     private Button button;
     private Button accelLogButton;
+    private Button buttonHrm;
     private Button shareButton;
     private TextView rateTextView;
 
@@ -90,6 +60,7 @@ public class MainActivity extends AppCompatActivity {
     private BluetoothAdapter bluetoothAdapter;
 
     private boolean pm5BluetoothConnected = false;
+    private boolean hrmBluetoothConnected = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -107,8 +78,10 @@ public class MainActivity extends AppCompatActivity {
         IntentFilter filter = new IntentFilter();
         filter.addAction(BluetoothDevice.ACTION_FOUND);
         filter.addAction(ACTION_SERVICE_STATE_CHANGED);
+        filter.addAction(ACTION_HRM_SERVICE_STATE_CHANGED);
         filter.addAction(ACTION_RATE_UPDATE);
         filter.addAction(ACTION_SET_FILE_TO_SEND);
+        filter.addAction(ACTION_HR_VALUE_UPDATE);
         registerReceiver(receiver, filter);
         LocalBroadcastManager.getInstance(this).registerReceiver(receiver, filter);
 
@@ -124,7 +97,7 @@ public class MainActivity extends AppCompatActivity {
                 startService(intent);
             }
             else {
-                popupBluetoothDeviceSelector(button, intent);
+                popupBluetoothDeviceSelector(button, intent, "PM5");
             }
         });
 
@@ -134,6 +107,19 @@ public class MainActivity extends AppCompatActivity {
             intent.setAction(ACTION_ACCEL_LOG_BUTTON_PRESSED);
             startService(intent);
         });
+
+        buttonHrm = findViewById(R.id.connect_hrm_button);
+        buttonHrm.setOnClickListener((v) -> {
+            Intent intent = new Intent(this, BluetoothHrmService.class);
+            intent.setAction(ACTION_CONNECT_BUTTON_PRESSED);
+            if (hrmBluetoothConnected) {
+                startService(intent);
+            }
+            else {
+                popupBluetoothDeviceSelector(buttonHrm, intent, "");
+            }
+        });
+
 
         shareButton = findViewById(R.id.share_btn);
         shareButton.setOnClickListener((v) -> {
@@ -162,16 +148,25 @@ public class MainActivity extends AppCompatActivity {
         unregisterReceiver(receiver);
     }
 
-    private final void popupBluetoothDeviceSelector(View view, Intent intent) {
+    private final void popupBluetoothDeviceSelector(View view, Intent intent, String prefix) {
         PopupMenu menu = new PopupMenu(this, view);
 
         Set<BluetoothDevice> devices = bluetoothAdapter.getBondedDevices();
         for (BluetoothDevice dev : devices) {
-            if (dev.getName().startsWith("PM5")) {
-                menu.getMenu().add(dev.getAlias());
+            Log.d("BLUETOOTH_NAME", "name: " + dev.getName() + "; alias: "+dev.getAlias());
+            ArrayList<String> names = new ArrayList();
+            if (dev.getName().startsWith(prefix)) {
+                String name = dev.getAlias();
+                if (name == null || name.length() == 0)
+                    name = dev.getName();
+                names.add(name);
+            }
+            for (String n: Collections.sort(names)) {
+                menu.getMenu.add(n);
             }
         }
         menu.setOnMenuItemClickListener((item) -> {
+            Log.d("HRM", "BUTTON CLICK");
             intent.putExtra(EXTRA_DEVICE_NAME, item.getTitle().toString());
             startService(intent);
             return true;
@@ -193,11 +188,11 @@ public class MainActivity extends AppCompatActivity {
             }
             else if (action.equals(ACTION_SERVICE_STATE_CHANGED)) {
                 int state = intent.getIntExtra(EXTRA_SERVICE_STATE, -1);
-                if (state == STATE_IDLE) {
+                if (state == SERVICE_STATE_IDLE) {
                     button.setText(R.string.connect);
                     pm5BluetoothConnected = false;
                 }
-                else if (state == STATE_CONNECTED) {
+                else if (state == SERVICE_STATE_CONNECTED) {
                     button.setText(R.string.disconnect);
                     pm5BluetoothConnected = true;
                 }
@@ -206,8 +201,26 @@ public class MainActivity extends AppCompatActivity {
                     pm5BluetoothConnected = false;
                 }
             }
+            else if (action.equals(ACTION_HRM_SERVICE_STATE_CHANGED)) {
+                int state = intent.getIntExtra(EXTRA_SERVICE_STATE, -1);
+                if (state == SERVICE_STATE_IDLE) {
+                    buttonHrm.setText(R.string.connect_hrm_btn_text);
+                    hrmBluetoothConnected = false;
+                }
+                else if (state == SERVICE_STATE_CONNECTED) {
+                    buttonHrm.setText(R.string.disconnect);
+                    hrmBluetoothConnected = true;
+                }
+                else {
+                    buttonHrm.setText(R.string.connecting);
+                    hrmBluetoothConnected = false;
+                }
+            }
             else if (action.equals(ACTION_RATE_UPDATE)) {
                 rateTextView.setText(String.valueOf(intent.getIntExtra(EXTRA_RATE, 0)));
+            }
+            else if (action.equals(ACTION_HR_VALUE_UPDATE)) {
+                rateTextView.setText(String.valueOf(intent.getIntExtra(EXTRA_HR_VALUE, 0)));
             }
             else if (action.equals(ACTION_SET_FILE_TO_SEND)) {
                 fileToSend = intent.getStringExtra(EXTRA_FILE_TO_SEND);

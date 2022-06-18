@@ -41,10 +41,12 @@ public class GattoolFileWriter extends BluetoothGattCallback {
     @Override
     public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
         super.onCharacteristicChanged(gatt, characteristic);
+        byte[] value = characteristic.getValue();
+        editCharacteristicValueBeforeLog(characteristic, value);
         synchronized (out) {
             try {
                 out.write(String.format("Notification handle = 0x%04x value: ", characteristic.getInstanceId()));
-                for (byte v : characteristic.getValue()) {
+                for (byte v : value) {
                     out.write(String.format("%02x ", v));
                 }
                 out.write("\n");
@@ -53,6 +55,8 @@ public class GattoolFileWriter extends BluetoothGattCallback {
             }
         }
     }
+
+    protected void editCharacteristicValueBeforeLog(BluetoothGattCharacteristic characteristic, byte[] value) {}
 
     @Override
     public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {

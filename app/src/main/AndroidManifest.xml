@@ -37,6 +37,11 @@
             android:enabled="true"
             android:exported="true"></service>
 
+        <service
+            android:name=".BluetoothHrmService"
+            android:enabled="true"
+            android:exported="false" />
+
 
     </application>
 
