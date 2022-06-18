@@ -21,6 +21,9 @@ import android.widget.PopupMenu;
 import android.widget.TextView;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Set;
 
 import static android.Manifest.permission.READ_EXTERNAL_STORAGE;
@@ -152,21 +155,22 @@ public class MainActivity extends AppCompatActivity {
         PopupMenu menu = new PopupMenu(this, view);
 
         Set<BluetoothDevice> devices = bluetoothAdapter.getBondedDevices();
+        ArrayList<String> names = new ArrayList();
         for (BluetoothDevice dev : devices) {
-            Log.d("BLUETOOTH_NAME", "name: " + dev.getName() + "; alias: "+dev.getAlias());
-            ArrayList<String> names = new ArrayList();
             if (dev.getName().startsWith(prefix)) {
                 String name = dev.getAlias();
                 if (name == null || name.length() == 0)
                     name = dev.getName();
                 names.add(name);
             }
-            for (String n: Collections.sort(names)) {
-                menu.getMenu.add(n);
-            }
+        }
+        Collections.sort(names);
+        for (String n: names) {
+            n.compareTo(n);
+            Log.d("BLUETOOTH_NAME", n);
+            menu.getMenu().add(n);
         }
         menu.setOnMenuItemClickListener((item) -> {
-            Log.d("HRM", "BUTTON CLICK");
             intent.putExtra(EXTRA_DEVICE_NAME, item.getTitle().toString());
             startService(intent);
             return true;
