@@ -167,7 +167,6 @@ public class MainActivity extends AppCompatActivity {
         Collections.sort(names);
         for (String n: names) {
             n.compareTo(n);
-            Log.d("BLUETOOTH_NAME", n);
             menu.getMenu().add(n);
         }
         menu.setOnMenuItemClickListener((item) -> {

@@ -207,22 +207,36 @@ public class BluetoothService extends Service {
         setState(SERVICE_STATE_SUBSCRIBING);
     }
 
-    private void subscribe(BluetoothGatt gatt, UUID serviceId, UUID characteristicId) {
+    private boolean subscribe(BluetoothGatt gatt, UUID serviceId, UUID characteristicId) {
         final BluetoothGattService service = gatt.getService(serviceId);
+        if (service == null)
+            return false;
         final BluetoothGattCharacteristic characteristic = service.getCharacteristic(characteristicId);
+        if (characteristic == null)
+            return false;
         final BluetoothGattDescriptor descriptor = characteristic.getDescriptor(GATT_CLIENT_CONFIGURATION_CHARACTERISTIC_UUID);
+        if (descriptor == null)
+            return false;
         gatt.setCharacteristicNotification(characteristic, true);
         descriptor.setValue(ENABLE_NOTIFICATION_VALUE);
         gatt.writeDescriptor(descriptor);
+        return true;
     }
 
-    private void unsubscribe(BluetoothGatt gatt, UUID serviceId, UUID characteristicId) {
+    private boolean unsubscribe(BluetoothGatt gatt, UUID serviceId, UUID characteristicId) {
         final BluetoothGattService service = gatt.getService(serviceId);
+        if (service == null)
+            return false;
         final BluetoothGattCharacteristic characteristic = service.getCharacteristic(characteristicId);
+        if (characteristic == null)
+            return false;
         final BluetoothGattDescriptor descriptor = characteristic.getDescriptor(GATT_CLIENT_CONFIGURATION_CHARACTERISTIC_UUID);
+        if (descriptor == null)
+            return false;
         gatt.setCharacteristicNotification(characteristic, false);
         descriptor.setValue(DISABLE_NOTIFICATION_VALUE);
         gatt.writeDescriptor(descriptor);
+        return true;
     }
 
     private void createGattCallback(String filename, String mac) {
@@ -328,7 +342,11 @@ public class BluetoothService extends Service {
                         if (state == SERVICE_STATE_SUBSCRIBING) {
                             UUID uuid = descriptor.getCharacteristic().getUuid();
                             if (uuid.equals(C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID)) {
-                                subscribe(gatt, C2_PM_CONTROL_SERVICE_UUID, C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID);
+                                boolean success = subscribe(gatt, C2_PM_CONTROL_SERVICE_UUID, C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID);
+                                if (!success) {
+                                    Log.d("GATT", "Force curve data characteristic does not exist.");
+                                    setState(SERVICE_STATE_CONNECTED);
+                                }
                             }
                             else if (uuid.equals(C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID)) {
                                 setState(SERVICE_STATE_CONNECTED);
@@ -336,10 +354,14 @@ public class BluetoothService extends Service {
                         }
                         else if (state == SERVICE_STATE_DISCONNECTING) {
                             UUID uuid = descriptor.getCharacteristic().getUuid();
+                            boolean finishDisconnect = false;
                             if (uuid.equals(C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID)) {
-                                unsubscribe(gatt, C2_PM_CONTROL_SERVICE_UUID, C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID);
+                                finishDisconnect = !unsubscribe(gatt, C2_PM_CONTROL_SERVICE_UUID, C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID);
                             }
                             else if (uuid.equals(C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID)) {
+                                finishDisconnect = true;
+                            }
+                            if (finishDisconnect) {
                                 bluetoothGatt.disconnect();
                                 bluetoothGatt.close();
                                 bluetoothGatt = null;
