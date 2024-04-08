@@ -2,7 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.github.zarandya.heartticks">
 
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <application
+        android:name="com.github.zarandya.heartticks.App"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -19,7 +21,7 @@
 
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="io.github.zarandya.rowing.GattAclProvider"
+            android:authorities=".GattAclProvider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
@@ -51,5 +53,11 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
 
     <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
+
+    <uses-feature android:name="android.software.companion_device_setup"/>
+
 
 </manifest>
