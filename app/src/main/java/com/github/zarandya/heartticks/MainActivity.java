@@ -97,14 +97,6 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        /* // Initializes Bluetooth adapter.
-        BluetoothAdapter bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-        // Ensures Bluetooth is available on the device and it is enabled. If not,
-        // displays a dialog requesting user permission to enable Bluetooth.
-        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
-            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-            startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
-        }*/
         IntentFilter filter = new IntentFilter();
         filter.addAction(BluetoothDevice.ACTION_FOUND);
         filter.addAction(ACTION_SERVICE_STATE_CHANGED);
@@ -224,7 +216,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         final int scanIID = iid;
-        menuBuilder.add(1, iid++, Menu.NONE, "... Scan for devices (Location must be enabled)");
+        menuBuilder.add(1, iid++, Menu.NONE, "... Scan for devices \n(Location must be enabled)");
 
         final int bondedBaseIID = iid;
         for (BluetoothDevice dev : bondedDevices) {
@@ -282,7 +274,7 @@ public class MainActivity extends AppCompatActivity {
                 startService(intent);
             } else {
                 if (SDK_INT >= Build.VERSION_CODES.O) {
-                    scanDevice(scanAddress, intent);
+                    scanDevice(scanAddress, intent, view);
                 }
             }
             return true;
@@ -291,9 +283,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private Intent companionScanNextServiceIntent = null;
+    private PopupMenu scanDevicePopupMenu = null;
+    private int scanDevicePopupMenuIID = 0;
+    private ArrayList<BluetoothDevice> scannedDevices = null;
+    private String scanAddress = null;
 
     @RequiresApi(api = Build.VERSION_CODES.O)
-    private final void scanDevice(String deviceAddress, Intent intent) {
+    private final void scanDevice(String deviceAddress, Intent intent, View view) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return;
         }
@@ -304,6 +300,41 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
             companionScanNextServiceIntent = intent;
+        }
+
+        if (SDK_INT >= Build.VERSION_CODES.S) {
+            scanAddress = deviceAddress;
+
+            synchronized (this) {
+                scanDevicePopupMenu = new PopupMenu(this, view);
+            }
+            Menu menu = scanDevicePopupMenu.getMenu();
+            menu.add(0, 0, Menu.NONE, "Scanning...");
+            menu.setGroupEnabled(0, false);
+            scanDevicePopupMenuIID = 1;
+            scannedDevices = new ArrayList<>();
+
+            scanDevicePopupMenu.setOnDismissListener((m) -> {
+                synchronized (this) {
+                    companionScanNextServiceIntent = null;
+                    scanDevicePopupMenu = null;
+                }
+                bluetoothAdapter.cancelDiscovery();
+            });
+
+            scanDevicePopupMenu.setOnMenuItemClickListener((item) -> {
+                BluetoothDevice device = scannedDevices.get(item.getItemId() - 1);
+                synchronized (this) {
+                    scanDevicePopupMenu = null;
+                }
+                bluetoothAdapter.cancelDiscovery();
+                connectDeviceAfterCompanionScan(device);
+                return true;
+            });
+
+            scanDevicePopupMenu.show();
+            bluetoothAdapter.startDiscovery();
+            return;
         }
 
         BluetoothDeviceFilter.Builder builder = new BluetoothDeviceFilter.Builder();
@@ -366,6 +397,17 @@ public class MainActivity extends AppCompatActivity {
                 String deviceName = device.getName();
                 String deviceHardwareAddress = device.getAddress(); // MAC address
                 Log.d("BLUETOOTH", deviceName + " " + deviceHardwareAddress);
+                synchronized (this) {
+                    if (scanDevicePopupMenu != null && scanAddress.equals(SCAN_NEW_DEVICE) && !device.getName().isEmpty()) {
+                        scannedDevices.add(device);
+                        Menu menu = scanDevicePopupMenu.getMenu();
+                        menu.add(1, scanDevicePopupMenuIID++, Menu.NONE, device.getName());
+                    }
+                }
+                if (device.getAddress().equals(scanAddress)) {
+                    connectDeviceAfterCompanionScan(device);
+                    scanDevicePopupMenu.dismiss();
+                }
             } else if (action.equals(ACTION_SERVICE_STATE_CHANGED)) {
                 int state = intent.getIntExtra(EXTRA_SERVICE_STATE, -1);
                 if (state == SERVICE_STATE_IDLE) {
@@ -401,6 +443,20 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
+    private void connectDeviceAfterCompanionScan(BluetoothDevice device) {
+        Intent intent;
+        synchronized (this) {
+            intent = companionScanNextServiceIntent;
+            companionScanNextServiceIntent = null;
+        }
+
+
+        if (intent != null) {
+            intent.putExtra(EXTRA_DEVICE, device);
+            startService(intent);
+        }
+
+    }
     private static final int SELECT_DEVICE_REQUEST_CODE = 42;
 
     @Override
@@ -417,18 +473,7 @@ public class MainActivity extends AppCompatActivity {
             deviceToPair.createBond();
 
             // ... Continue interacting with the paired device.
-
-            Intent intent;
-            synchronized (this) {
-                intent = companionScanNextServiceIntent;
-                companionScanNextServiceIntent = null;
-            }
-
-
-            if (intent != null) {
-                intent.putExtra(EXTRA_DEVICE, deviceToPair);
-                startService(intent);
-            }
+            connectDeviceAfterCompanionScan(deviceToPair);
         }
     }
 
