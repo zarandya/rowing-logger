@@ -159,7 +159,10 @@ public class MainActivity extends AppCompatActivity {
         shareButton.setOnClickListener((v) -> {
             if (fileToSend != null) {
                 Intent intent = new Intent(Intent.ACTION_SEND);
-                intent.putExtra(Intent.EXTRA_STREAM, FileProvider.getUriForFile(this, "io.github.zarandya.rowing.GattAclProvider", new File(fileToSend)));
+                intent.putExtra(Intent.EXTRA_STREAM,
+                        FileProvider.getUriForFile(this,
+                                "com.github.zarandya.heartticks.GattAclProvider",
+                                new File(fileToSend)));
                 intent.setType(fileToSend.endsWith(".gatt") ? "application/gatt" : "application/accellog");
                 Intent shareIntent = Intent.createChooser(intent, null);
                 startActivity(shareIntent);
