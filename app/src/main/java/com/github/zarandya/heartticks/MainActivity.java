@@ -470,7 +470,6 @@ public class MainActivity extends AppCompatActivity {
             if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
                 return;
             }
-            deviceToPair.createBond();
 
             // ... Continue interacting with the paired device.
             connectDeviceAfterCompanionScan(deviceToPair);

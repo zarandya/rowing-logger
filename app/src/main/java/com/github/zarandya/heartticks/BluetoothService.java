@@ -442,6 +442,9 @@ public class BluetoothService extends Service {
                     }
                 }, 5000);
             }
+            if (s == SERVICE_STATE_CONNECTED) {
+                saveDeviceToDatabase();
+            }
             sendState();
         }
         catch (Exception e) {
@@ -480,6 +483,7 @@ public class BluetoothService extends Service {
     };
 
     private void saveDeviceToDatabase() {
+        device.createBond();
         new Thread(() -> {
             if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
                 throw new RuntimeException("The service should not have started with missing permissions");

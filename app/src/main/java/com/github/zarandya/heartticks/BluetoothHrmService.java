@@ -435,6 +435,7 @@ public class BluetoothHrmService extends Service {
     }
 
     private void saveDeviceToDatabase() {
+        device.createBond();
         new Thread(() -> {
             if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
                 throw new RuntimeException("The service should not have started with missing permissions");
