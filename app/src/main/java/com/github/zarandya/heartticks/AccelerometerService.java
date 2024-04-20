@@ -47,7 +47,7 @@ public class AccelerometerService extends Service implements SensorEventListener
     
     private int state;
     
-    public static final int STATE_IDLE = BluetoothService.SERVICE_STATE_IDLE; // same as STATE_IDLE in BluetoothService
+    public static final int STATE_IDLE = BluetoothPM5Service.SERVICE_STATE_IDLE; // same as STATE_IDLE in BluetoothService
     public static final int STATE_RECORDING_ACCEL_DATA = 1;
     public static final int STATE_SENSOR_FAILED = 2;
     

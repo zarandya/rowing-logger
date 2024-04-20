@@ -13,7 +13,6 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.companion.AssociationRequest;
 import android.companion.BluetoothDeviceFilter;
-import android.companion.BluetoothLeDeviceFilter;
 import android.companion.CompanionDeviceManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -23,7 +22,6 @@ import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.ParcelUuid;
 import android.util.Log;
 import android.view.Menu;
 import android.view.View;
@@ -50,16 +48,12 @@ import static com.github.zarandya.heartticks.AccelerometerService.ACTION_RATE_UP
 import static com.github.zarandya.heartticks.AccelerometerService.EXTRA_RATE;
 import static com.github.zarandya.heartticks.BluetoothHrmService.ACTION_HRM_SERVICE_STATE_CHANGED;
 import static com.github.zarandya.heartticks.BluetoothHrmService.EXTRA_HR_VALUE;
-import static com.github.zarandya.heartticks.BluetoothHrmService.HR_CHARACTERISTIC_UUID;
-import static com.github.zarandya.heartticks.BluetoothHrmService.SERVICE_STATE_SCAN;
-import static com.github.zarandya.heartticks.BluetoothHrmService.SERVICE_UUID_MASK;
-import static com.github.zarandya.heartticks.BluetoothService.ACTION_CONNECT_BUTTON_PRESSED;
-import static com.github.zarandya.heartticks.BluetoothService.ACTION_QUERY_STATE;
-import static com.github.zarandya.heartticks.BluetoothService.ACTION_SERVICE_STATE_CHANGED;
-import static com.github.zarandya.heartticks.BluetoothService.EXTRA_SERVICE_STATE;
-import static com.github.zarandya.heartticks.BluetoothService.HR_SERVICE_UUID;
-import static com.github.zarandya.heartticks.BluetoothService.SERVICE_STATE_CONNECTED;
-import static com.github.zarandya.heartticks.BluetoothService.SERVICE_STATE_IDLE;
+import static com.github.zarandya.heartticks.BluetoothPM5Service.ACTION_CONNECT_BUTTON_PRESSED;
+import static com.github.zarandya.heartticks.BluetoothPM5Service.ACTION_QUERY_STATE;
+import static com.github.zarandya.heartticks.BluetoothPM5Service.ACTION_SERVICE_STATE_CHANGED;
+import static com.github.zarandya.heartticks.BluetoothPM5Service.EXTRA_SERVICE_STATE;
+import static com.github.zarandya.heartticks.BluetoothPM5Service.SERVICE_STATE_CONNECTED;
+import static com.github.zarandya.heartticks.BluetoothPM5Service.SERVICE_STATE_IDLE;
 import static com.github.zarandya.heartticks.BluetoothHrmService.ACTION_HR_VALUE_UPDATE;
 import static com.github.zarandya.heartticks.db.BluetoothDeviceType.HRM;
 import static com.github.zarandya.heartticks.db.BluetoothDeviceType.PM5;
@@ -114,7 +108,7 @@ public class MainActivity extends AppCompatActivity {
         button = findViewById(R.id.button);
         button.setOnClickListener((v) -> {
             if (!ensureBluetoothPermission()) return;
-            Intent intent = new Intent(this, BluetoothService.class);
+            Intent intent = new Intent(this, BluetoothPM5Service.class);
             intent.setAction(ACTION_CONNECT_BUTTON_PRESSED);
             if (pm5BluetoothConnected) {
                 startService(intent);
@@ -171,7 +165,7 @@ public class MainActivity extends AppCompatActivity {
 
         rateTextView = findViewById(R.id.rate_text_view);
 
-        Intent queryState = new Intent(this, BluetoothService.class);
+        Intent queryState = new Intent(this, BluetoothPM5Service.class);
         queryState.setAction(ACTION_QUERY_STATE);
         startService(queryState);
 

@@ -1,6 +1,21 @@
 package com.github.zarandya.heartticks;
 
-import android.Manifest;
+import static android.Manifest.permission.BLUETOOTH_CONNECT;
+import static android.app.NotificationManager.IMPORTANCE_LOW;
+import static android.bluetooth.BluetoothGatt.GATT_SUCCESS;
+import static android.bluetooth.BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE;
+import static android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE;
+import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
+import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
+import static android.content.pm.PackageManager.PERMISSION_GRANTED;
+import static android.os.Build.VERSION.SDK_INT;
+import static androidx.core.app.NotificationCompat.PRIORITY_LOW;
+import static com.github.zarandya.heartticks.MainActivity.ACTION_SET_FILE_TO_SEND;
+import static com.github.zarandya.heartticks.MainActivity.EXTRA_DEVICE;
+import static com.github.zarandya.heartticks.MainActivity.EXTRA_FILE_TO_SEND;
+import static com.github.zarandya.heartticks.R.string.bluetooth_service_channel_name;
+import static java.util.TimeZone.getTimeZone;
+
 import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -12,11 +27,7 @@ import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
-import android.content.BroadcastReceiver;
-import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
@@ -26,41 +37,23 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
+import com.github.zarandya.heartticks.db.SavedBluetoothDevice;
+
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.Set;
+import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.UUID;
 
-import static android.Manifest.permission.BLUETOOTH_CONNECT;
-import static android.app.NotificationManager.IMPORTANCE_LOW;
-import static android.bluetooth.BluetoothGatt.GATT_SUCCESS;
-import static android.bluetooth.BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE;
-import static android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE;
-import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
-import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
-import static android.content.pm.PackageManager.PERMISSION_GRANTED;
-import static android.os.Build.VERSION.SDK_INT;
-import static androidx.core.app.NotificationCompat.PRIORITY_LOW;
-import static com.github.zarandya.heartticks.BluetoothHrmService.ACTION_HR_VALUE_UPDATE;
-import static com.github.zarandya.heartticks.BluetoothHrmService.EXTRA_HR_VALUE;
-import static com.github.zarandya.heartticks.MainActivity.ACTION_SET_FILE_TO_SEND;
-import static com.github.zarandya.heartticks.MainActivity.EXTRA_DEVICE;
-import static com.github.zarandya.heartticks.MainActivity.EXTRA_FILE_TO_SEND;
-import static com.github.zarandya.heartticks.R.string.bluetooth_service_channel_name;
-import static com.github.zarandya.heartticks.db.BluetoothDeviceType.HRM;
-import static com.github.zarandya.heartticks.db.BluetoothDeviceType.PM5;
-import static java.util.TimeZone.getTimeZone;
+import kotlin.Pair;
 
-import com.github.zarandya.heartticks.db.SavedBluetoothDevice;
-
-public class BluetoothService extends Service {
-
+public abstract class BaseBluetoothService extends Service {
     public static final int SERVICE_STATE_IDLE = 0;
     public static final int SERVICE_STATE_CONNECTING = 1;
     public static final int SERVICE_STATE_SUBSCRIBING = 2;
@@ -69,11 +62,12 @@ public class BluetoothService extends Service {
 
     public static final String ACTION_CONNECT_BUTTON_PRESSED = "action_connect_button_pressed";
     public static final String ACTION_QUERY_STATE = "sction_query_state";
-    public static final String ACTION_SERVICE_STATE_CHANGED = "action_service_change_state";
     public static final String EXTRA_SERVICE_STATE = "extra_service_state";
 
     public static final int NOTIFICATION_ID = 83;
-    public static final String CHANNEL_ID = "io.github.zarandya.beatrate.BLUETOOTH_SERVICE_NOTIFICATION";
+
+    private static final UUID GATT_CLIENT_CONFIGURATION_CHARACTERISTIC_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
+
 
     private int state = SERVICE_STATE_IDLE;
     private BluetoothAdapter bluetoothAdapter;
@@ -83,7 +77,9 @@ public class BluetoothService extends Service {
 
     private BluetoothDevice device = null;
 
-    private int hrFromBluetoothHrm = 0;
+    protected abstract String getNotificationChannelId();
+
+    protected abstract int getTimestampWritePeriod();
 
     @Override
     public void onCreate() {
@@ -92,7 +88,7 @@ public class BluetoothService extends Service {
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
 
         if (SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, getString(bluetooth_service_channel_name), IMPORTANCE_LOW);
+            NotificationChannel channel = new NotificationChannel(getNotificationChannelId(), getString(bluetooth_service_channel_name), IMPORTANCE_LOW);
             channel.setDescription(getString(bluetooth_service_channel_name));
             NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
             nm.createNotificationChannel(channel);
@@ -113,12 +109,7 @@ public class BluetoothService extends Service {
                     gaf.writeTime("time " + df.format(new Date()));
                 }
             }
-        }, 5000, 5000);
-
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(ACTION_HR_VALUE_UPDATE);
-        registerReceiver(receiver, filter);
-        LocalBroadcastManager.getInstance(this).registerReceiver(receiver, filter);
+        }, getTimestampWritePeriod(), getTimestampWritePeriod()); // TODO this was 5000 for ergs and 500 for HRM, why?
     }
 
     @Override
@@ -141,31 +132,46 @@ public class BluetoothService extends Service {
         return START_NOT_STICKY;
     }
 
+    protected abstract String generateOutputFilename(String Base);
+
     private void startConnect() {
+        if (device == null)
+            return;
         setState(SERVICE_STATE_CONNECTING);
         try {
-            @SuppressLint("SimpleDateFormat") SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH-mm-ss'Z'");
-            df.setTimeZone(getTimeZone("UTC"));
-
             File externalGatt = new File(ContextCompat.getExternalFilesDirs(this, null)[0].getPath() + "/gatt");
             if (!externalGatt.isDirectory()) {
                 externalGatt.mkdir();
             }
-            filename = externalGatt.getPath() + "/Concept2Gatt_" + df.format(new Date()) + ".c2.gatt";
-
+            filename = generateOutputFilename(externalGatt.getPath());
 
             createGattCallback(filename, device.getAddress());
             connect(device);
+
         } catch (Exception e) {
             e.printStackTrace();
             errDisconnect();
         }
     }
 
+    private List<Pair<UUID, UUID>> requiredCharacteristics = new ArrayList<>();
+    private List<Pair<UUID, UUID>> optionalCharacteristics = new ArrayList<>();
+    private List<Pair<UUID, UUID>> connectedCharacteristics = new ArrayList<>();
+    private int requiredSubscribingIndx = 0;
+    private int optionalSubscribingIndx = 0;
+
+    protected void registerCharacteristic(UUID serviceUUID, UUID uuid, boolean required) {
+        if (required)
+            requiredCharacteristics.add(new Pair(serviceUUID, uuid));
+        else
+            optionalCharacteristics.add(new Pair(serviceUUID, uuid));
+    }
+
     private void startDisconnect() {
         setState(SERVICE_STATE_DISCONNECTING);
         try {
-            unsubscribe(bluetoothGatt, C2_PM_CONTROL_SERVICE_UUID, C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID);
+            Pair<UUID, UUID> ch = connectedCharacteristics.get(0);
+            unsubscribe(bluetoothGatt, ch.getFirst(), ch.getSecond());
         } catch (Exception e) {
             errDisconnect();
         }
@@ -189,13 +195,6 @@ public class BluetoothService extends Service {
     }
 
     private boolean connected = false;
-    static final UUID HR_SERVICE_UUID = UUID.fromString("0000180D-0000-1000-8000-00805f9b34fb");
-    static final UUID GATT_CLIENT_CONFIGURATION_CHARACTERISTIC_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
-    static final UUID HR_CHARACTERISTIC_UUID = UUID.fromString("00002a37-0000-1000-8000-00805f9b34fb");
-
-    static final UUID C2_PM_CONTROL_SERVICE_UUID = UUID.fromString("ce060030-43e5-11e4-916c-0800200c9a66");
-    static final UUID C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID = UUID.fromString("ce060080-43e5-11e4-916c-0800200c9a66");
-    static final UUID C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID = UUID.fromString("ce06003d-43e5-11e4-916c-0800200c9a66");
 
 
     private synchronized void connect(BluetoothDevice device) {
@@ -205,6 +204,50 @@ public class BluetoothService extends Service {
             throw new RuntimeException("The service should not have started with missing permissions");
         bluetoothGatt = device.connectGatt(this, false, gattCallback);
         setState(SERVICE_STATE_SUBSCRIBING);
+    }
+
+    protected void startSubscribe(BluetoothGatt gatt) {
+        setState(SERVICE_STATE_SUBSCRIBING);
+        requiredSubscribingIndx = 0;
+        optionalSubscribingIndx = 0;
+        subscribeToNext(gatt);
+    }
+
+    private void onSuccessfulSubscribe(BluetoothGatt gatt, UUID serviceUUID, UUID uuid) {
+        if (requiredSubscribingIndx < requiredCharacteristics.size()) {
+            Pair<UUID, UUID> ch = requiredCharacteristics.get(requiredSubscribingIndx);
+            if (serviceUUID.equals(ch.getFirst()) && uuid.equals(ch.getSecond())) {
+                connectedCharacteristics.add(ch);
+                ++requiredSubscribingIndx;
+                subscribeToNext(gatt);
+            }
+        } else {
+            Pair<UUID, UUID> ch = optionalCharacteristics.get(optionalSubscribingIndx);
+            if (serviceUUID.equals(ch.getFirst()) && uuid.equals(ch.getSecond())) {
+                connectedCharacteristics.add(ch);
+                ++optionalSubscribingIndx;
+                subscribeToNext(gatt);
+            }
+        }
+    }
+
+    private void subscribeToNext(BluetoothGatt gatt) {
+        if (requiredSubscribingIndx < requiredCharacteristics.size()) {
+            Pair<UUID, UUID> ch = requiredCharacteristics.get(requiredSubscribingIndx);
+            subscribe(gatt, ch.getFirst(), ch.getSecond());
+        } else {
+            boolean characteristicExists = false;
+            while (optionalSubscribingIndx < optionalCharacteristics.size() &&
+                    !characteristicExists) {
+                Pair<UUID, UUID> ch = optionalCharacteristics.get(optionalSubscribingIndx);
+                characteristicExists =
+                        subscribe(gatt, ch.getFirst(), ch.getSecond());
+            }
+
+            if (!characteristicExists) {
+                setState(SERVICE_STATE_CONNECTED);
+            }
+        }
     }
 
     private boolean subscribe(BluetoothGatt gatt, UUID serviceId, UUID characteristicId) {
@@ -225,6 +268,20 @@ public class BluetoothService extends Service {
         return true;
     }
 
+    private boolean onSuccessfulUnsubscribe(BluetoothGatt gatt, UUID serviceUUID, UUID uuid) {
+        Pair<UUID, UUID> ch = connectedCharacteristics.get(0);
+        if (serviceUUID.equals(ch.getFirst()) && uuid.equals(ch.getSecond())) {
+            connectedCharacteristics.remove(0);
+
+            if (!connectedCharacteristics.isEmpty()) {
+                ch = connectedCharacteristics.get(0);
+                unsubscribe(gatt, ch.getFirst(), ch.getSecond());
+            } else
+                return true;    // we are done
+        }
+        return false;
+    }
+
     private boolean unsubscribe(BluetoothGatt gatt, UUID serviceId, UUID characteristicId) {
         final BluetoothGattService service = gatt.getService(serviceId);
         if (service == null)
@@ -243,27 +300,19 @@ public class BluetoothService extends Service {
         return true;
     }
 
+    protected void editCharacteristicValueBeforeLog(BluetoothGattCharacteristic characteristic, byte[] value) {
+        // Do nothing by default
+    }
+
+    protected void characteristicChanged(BluetoothGattCharacteristic characteristic) {
+    }
+
     private void createGattCallback(String filename, String mac) {
         try {
             gattCallback = new GattoolFileWriter(filename, "[" + mac.toLowerCase() + "][LE]> ") {
                 @Override
                 protected void editCharacteristicValueBeforeLog(BluetoothGattCharacteristic characteristic, byte[] value) {
-                    if (characteristic.getUuid().equals(C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID) &&
-                        value.length >= 10 &&
-                        value[0] == 0x32) {
-                        // Update heart rate from bluetooth hrm
-                        if (value[7] == (byte) 0xff) {
-                            value[7] = (byte) hrFromBluetoothHrm;
-                        }
-                    }
-                    if (characteristic.getUuid().equals(C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID) &&
-                            value.length >= 10 &&
-                            value[0] == 0x38) {
-                        // Update split/interval work heart rate from bluetooth hrm
-                        if (value[5] == 0) {
-                            value[5] = (byte) hrFromBluetoothHrm;
-                        }
-                    }
+                    BaseBluetoothService.this.editCharacteristicValueBeforeLog(characteristic, value);
                 }
 
                 @Override
@@ -283,7 +332,7 @@ public class BluetoothService extends Service {
                     super.onConnectionStateChange(gatt, status, newState);
                     Log.d("GATT", "CONNECTION STATE CHANGE newState: " + newState + " status: " + status);
                     if (newState == STATE_CONNECTED) {
-                        if (ActivityCompat.checkSelfPermission(BluetoothService.this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
+                        if (ActivityCompat.checkSelfPermission(BaseBluetoothService.this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
                             throw new RuntimeException("The service should not have started with missing permissions");
                         gatt.discoverServices();
                     }
@@ -298,7 +347,7 @@ public class BluetoothService extends Service {
                     Log.d("GATT", "SERVICES DISCOVERED status: " + status);
                     Log.d("Discovery", "listing services");
                     for (BluetoothGattService service : gatt.getServices()) {
-                        Log.d("Discovery", "SERVICE " +  service.getUuid().toString() + " " + service.getInstanceId());
+                        Log.d("Discovery", "SERVICE " + service.getUuid().toString() + " " + service.getInstanceId());
                         for (BluetoothGattCharacteristic c : service.getCharacteristics()) {
                             Log.d("Discovery", "CHARACTERISTIC " + c.getUuid().toString() + " " + c.getInstanceId());
                             for (BluetoothGattDescriptor d : c.getDescriptors()) {
@@ -307,8 +356,8 @@ public class BluetoothService extends Service {
                         }
                     }
 
-                    setState(SERVICE_STATE_SUBSCRIBING);
-                    subscribe(gatt, C2_PM_CONTROL_SERVICE_UUID, C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID);
+                    startSubscribe(gatt);
+
                 }
 
                 @Override
@@ -327,6 +376,7 @@ public class BluetoothService extends Service {
                 @Override
                 public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
                     super.onCharacteristicChanged(gatt, characteristic);
+                    characteristicChanged(characteristic);
                     StringBuilder b = new StringBuilder();
                     for (byte v : characteristic.getValue()) {
                         b.append(String.format("%2x ", v));
@@ -346,29 +396,15 @@ public class BluetoothService extends Service {
                     Log.d("GATT", "DESCRIPTOR WRITE: " + descriptor.getUuid() + "value: " + Arrays.toString(descriptor.getValue()) + " status: " + status);
                     if (status == GATT_SUCCESS) {
                         if (state == SERVICE_STATE_SUBSCRIBING) {
+                            UUID serviceUUID = descriptor.getCharacteristic().getService().getUuid();
                             UUID uuid = descriptor.getCharacteristic().getUuid();
-                            if (uuid.equals(C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID)) {
-                                boolean success = subscribe(gatt, C2_PM_CONTROL_SERVICE_UUID, C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID);
-                                if (!success) {
-                                    Log.d("GATT", "Force curve data characteristic does not exist.");
-                                    setState(SERVICE_STATE_CONNECTED);
-                                }
-                            }
-                            else if (uuid.equals(C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID)) {
-                                setState(SERVICE_STATE_CONNECTED);
-                            }
-                        }
-                        else if (state == SERVICE_STATE_DISCONNECTING) {
+                            onSuccessfulSubscribe(gatt, serviceUUID, uuid);
+                        } else if (state == SERVICE_STATE_DISCONNECTING) {
+                            UUID serviceUUID = descriptor.getCharacteristic().getService().getUuid();
                             UUID uuid = descriptor.getCharacteristic().getUuid();
-                            boolean finishDisconnect = false;
-                            if (uuid.equals(C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID)) {
-                                finishDisconnect = !unsubscribe(gatt, C2_PM_CONTROL_SERVICE_UUID, C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID);
-                            }
-                            else if (uuid.equals(C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID)) {
-                                finishDisconnect = true;
-                            }
+                            boolean finishDisconnect = onSuccessfulUnsubscribe(gatt, serviceUUID, uuid);
                             if (finishDisconnect) {
-                                if (ActivityCompat.checkSelfPermission(BluetoothService.this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
+                                if (ActivityCompat.checkSelfPermission(BaseBluetoothService.this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
                                     throw new RuntimeException("The service should not have started with missing permissions");
                                 bluetoothGatt.disconnect();
                                 bluetoothGatt.close();
@@ -379,8 +415,7 @@ public class BluetoothService extends Service {
                                 setState(SERVICE_STATE_IDLE);
                             }
                         }
-                    }
-                    else {
+                    } else {
                         errDisconnect();
                     }
                 }
@@ -408,7 +443,7 @@ public class BluetoothService extends Service {
     public int getState() {
         return state;
     }
-    
+
     private volatile long stateChangeCounter = 0;
 
     private void setState(final int s) {
@@ -420,7 +455,7 @@ public class BluetoothService extends Service {
             if (s == SERVICE_STATE_CONNECTED) {
                 if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
                     throw new RuntimeException("The service should not have started with missing permissions");
-                Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+                Notification notification = new NotificationCompat.Builder(this, getNotificationChannelId())
                         .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
                         .setContentText("Connected to " + bluetoothGatt.getDevice().getName())
                         .setContentText("")
@@ -440,24 +475,23 @@ public class BluetoothService extends Service {
                             errDisconnect();
                         }
                     }
-                }, 5000);
+                }, getConnectionTimeoutPeriod());
             }
             if (s == SERVICE_STATE_CONNECTED) {
                 saveDeviceToDatabase();
             }
             sendState();
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             e.printStackTrace();
             errDisconnect();
         }
     }
 
-    private void sendState() {
-        Intent broadcast = new Intent(ACTION_SERVICE_STATE_CHANGED);
-        broadcast.putExtra(EXTRA_SERVICE_STATE, state);
-        LocalBroadcastManager.getInstance(this).sendBroadcast(broadcast);
-    }
+    protected abstract long getConnectionTimeoutPeriod();
+
+    protected abstract int getDeviceType();
+
+    protected abstract void sendState();
 
     private void sendFileToShare() {
         Intent broadcast = new Intent(ACTION_SET_FILE_TO_SEND);
@@ -465,25 +499,12 @@ public class BluetoothService extends Service {
         LocalBroadcastManager.getInstance(this).sendBroadcast(broadcast);
     }
 
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        // Don't forget to unregister the ACTION_FOUND receiver.
-        unregisterReceiver(receiver);
-    }
-
-    private final BroadcastReceiver receiver = new BroadcastReceiver() {
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if (action.equals(ACTION_HR_VALUE_UPDATE)) {
-                hrFromBluetoothHrm = intent.getIntExtra(EXTRA_HR_VALUE, 0);
-            }
-        }
-
-    };
-
     private void saveDeviceToDatabase() {
+        if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
+            throw new RuntimeException("The service should not have started with missing permissions");
+
         device.createBond();
+
         new Thread(() -> {
             if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
                 throw new RuntimeException("The service should not have started with missing permissions");
@@ -502,7 +523,7 @@ public class BluetoothService extends Service {
                     device.getName(),
                     (SDK_INT >= Build.VERSION_CODES.R) ? device.getAlias() : device.getName(),
                     addressType,
-                    PM5
+                    getDeviceType()
             ));
         }).start();
     }
