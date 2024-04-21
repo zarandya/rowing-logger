@@ -7,4 +7,5 @@
     <string name="accel_log_service_name">Acceleration Log Service</string>
     <string name="rate_monitor_btn_text">Rate Monitor</string>
     <string name="connect_hrm_btn_text">CONNECT HRM</string>
+    <string name="connect_bike_btn_text">CONNECT BIKE (experimental)</string>
 </resources>

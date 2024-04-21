@@ -46,6 +46,7 @@ import static android.os.Build.VERSION.SDK_INT;
 import static com.github.zarandya.heartticks.AccelerometerService.ACTION_ACCEL_LOG_BUTTON_PRESSED;
 import static com.github.zarandya.heartticks.AccelerometerService.ACTION_RATE_UPDATE;
 import static com.github.zarandya.heartticks.AccelerometerService.EXTRA_RATE;
+import static com.github.zarandya.heartticks.BluetoothBikeService.ACTION_BIKE_SERVICE_STATE_CHANGED;
 import static com.github.zarandya.heartticks.BluetoothHrmService.ACTION_HRM_SERVICE_STATE_CHANGED;
 import static com.github.zarandya.heartticks.BluetoothHrmService.EXTRA_HR_VALUE;
 import static com.github.zarandya.heartticks.BluetoothPM5Service.ACTION_CONNECT_BUTTON_PRESSED;
@@ -55,6 +56,7 @@ import static com.github.zarandya.heartticks.BluetoothPM5Service.EXTRA_SERVICE_S
 import static com.github.zarandya.heartticks.BluetoothPM5Service.SERVICE_STATE_CONNECTED;
 import static com.github.zarandya.heartticks.BluetoothPM5Service.SERVICE_STATE_IDLE;
 import static com.github.zarandya.heartticks.BluetoothHrmService.ACTION_HR_VALUE_UPDATE;
+import static com.github.zarandya.heartticks.db.BluetoothDeviceType.BIKE;
 import static com.github.zarandya.heartticks.db.BluetoothDeviceType.HRM;
 import static com.github.zarandya.heartticks.db.BluetoothDeviceType.PM5;
 import static java.util.TimeZone.getTimeZone;
@@ -67,6 +69,7 @@ public class MainActivity extends AppCompatActivity {
     private Button button;
     private Button accelLogButton;
     private Button buttonHrm;
+    private Button buttonBike;
     private Button shareButton;
     private TextView rateTextView;
 
@@ -85,6 +88,7 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean pm5BluetoothConnected = false;
     private boolean hrmBluetoothConnected = false;
+    private boolean bikeBluetoothConnected = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -117,7 +121,7 @@ public class MainActivity extends AppCompatActivity {
                     final List<SavedBluetoothDevice> savedDevices =
                             App.getDB().getDevicesDao().devicesOfKind(PM5);
                     runOnUiThread(() -> {
-                        popupBluetoothDeviceSelector(buttonHrm, intent, savedDevices, "");
+                        popupBluetoothDeviceSelector(button, intent, savedDevices, "");
                     });
                 }).start();
             }
@@ -148,6 +152,23 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        buttonBike = findViewById(R.id.connect_bike_button);
+        buttonBike.setOnClickListener((v) -> {
+            if (!ensureBluetoothPermission()) return;
+            Intent intent = new Intent(this, BluetoothBikeService.class);
+            intent.setAction(ACTION_CONNECT_BUTTON_PRESSED);
+            if (bikeBluetoothConnected) {
+                startService(intent);
+            } else {
+                new Thread(() -> {
+                    final List<SavedBluetoothDevice> savedDevices =
+                            App.getDB().getDevicesDao().devicesOfKind(BIKE);
+                    runOnUiThread(() -> {
+                        popupBluetoothDeviceSelector(buttonBike, intent, savedDevices, "");
+                    });
+                }).start();
+            }
+        });
 
         shareButton = findViewById(R.id.share_btn);
         shareButton.setOnClickListener((v) -> {
@@ -291,6 +312,9 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
+            throw new RuntimeException("The function should not have been called with missing permissions");
+
         synchronized (this) {
             if (companionScanNextServiceIntent != null) {
                 Log.e("Companion", "A companion scan is already running");
@@ -431,6 +455,18 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     buttonHrm.setText(R.string.connecting);
                     hrmBluetoothConnected = false;
+                }
+            } else if (action.equals(ACTION_BIKE_SERVICE_STATE_CHANGED)) {
+                int state = intent.getIntExtra(EXTRA_SERVICE_STATE, -1);
+                if (state == SERVICE_STATE_IDLE) {
+                    buttonBike.setText(R.string.connect_bike_btn_text);
+                    bikeBluetoothConnected = false;
+                } else if (state == SERVICE_STATE_CONNECTED) {
+                    buttonBike.setText(R.string.disconnect);
+                    bikeBluetoothConnected = true;
+                } else {
+                    buttonBike.setText(R.string.connecting);
+                    bikeBluetoothConnected = false;
                 }
             } else if (action.equals(ACTION_RATE_UPDATE)) {
                 rateTextView.setText(String.valueOf(intent.getIntExtra(EXTRA_RATE, 0)));

@@ -211,6 +211,10 @@ public class GattoolFileWriter extends BluetoothGattCallback {
                 out.write(prompt);
                 out.write("char-desc\n");
                 for (BluetoothGattService service : gatt.getServices()) {
+                    out.write("#service");
+                    out.write(String.format("handle: 0x%04x, uuid: ", service.getInstanceId()));
+                    out.write(service.getUuid().toString());
+                    out.write("\n");
                     for (BluetoothGattCharacteristic c : service.getCharacteristics()) {
                         out.write(String.format("handle: 0x%04x, uuid: ", c.getInstanceId()));
                         out.write(c.getUuid().toString());

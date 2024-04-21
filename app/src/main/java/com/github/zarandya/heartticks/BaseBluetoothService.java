@@ -167,6 +167,10 @@ public abstract class BaseBluetoothService extends Service {
             optionalCharacteristics.add(new Pair(serviceUUID, uuid));
     }
 
+    protected void registerCharacteristicForReadOnce(UUID serviceUUID, UUID uuid) {
+        // TODO implement this
+    }
+
     private void startDisconnect() {
         setState(SERVICE_STATE_DISCONNECTING);
         try {

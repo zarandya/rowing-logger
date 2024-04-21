@@ -51,4 +51,13 @@
         app:layout_constraintStart_toEndOf="@+id/accel_log_btn"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <Button
+        android:id="@+id/connect_bike_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:text="@string/connect_bike_btn_text"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/button" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>
