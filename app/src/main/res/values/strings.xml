@@ -8,4 +8,5 @@
     <string name="rate_monitor_btn_text">Rate Monitor</string>
     <string name="connect_hrm_btn_text">CONNECT HRM</string>
     <string name="connect_bike_btn_text">CONNECT BIKE (experimental)</string>
+    <string name="connect_oarlock_btn_text">CONNECT OARLOCK (experimental)</string>
 </resources>

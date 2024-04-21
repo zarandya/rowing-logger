@@ -32,8 +32,7 @@ public class BluetoothBikeService extends BaseBluetoothService {
     static final UUID FITNESS_MACHINE_CONTROL_POINT = UUID.fromString("00002ad9-0000-1000-8000-00805f9b34fb");
 
 
-    public static final String CHANNEL_ID = "io.github.zarandya.beatrate.BLUETOOTH_HRM_SERVICE_NOTIFICATION";
-    private static final int SELECT_DEVICE_REQUEST_CODE_HRM = 0;
+    public static final String CHANNEL_ID = "io.github.zarandya.beatrate.BLUETOOTH_BIKE_SERVICE_NOTIFICATION";
 
     @Override
     protected String getNotificationChannelId() {
@@ -62,7 +61,8 @@ public class BluetoothBikeService extends BaseBluetoothService {
 
     @Override
     protected String generateOutputFilename(String base) {
-        @SuppressLint("SimpleDateFormat") SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH-mm-ss'Z'");
+        @SuppressLint("SimpleDateFormat")
+        SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH-mm-ss'Z'");
         df.setTimeZone(getTimeZone("UTC"));
 
         return base + "/BikeGatt_" + df.format(new Date()) + ".bike.gatt";

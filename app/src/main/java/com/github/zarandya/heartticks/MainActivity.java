@@ -49,6 +49,7 @@ import static com.github.zarandya.heartticks.AccelerometerService.EXTRA_RATE;
 import static com.github.zarandya.heartticks.BluetoothBikeService.ACTION_BIKE_SERVICE_STATE_CHANGED;
 import static com.github.zarandya.heartticks.BluetoothHrmService.ACTION_HRM_SERVICE_STATE_CHANGED;
 import static com.github.zarandya.heartticks.BluetoothHrmService.EXTRA_HR_VALUE;
+import static com.github.zarandya.heartticks.BluetoothOarlockService.ACTION_OARLOCK_SERVICE_STATE_CHANGED;
 import static com.github.zarandya.heartticks.BluetoothPM5Service.ACTION_CONNECT_BUTTON_PRESSED;
 import static com.github.zarandya.heartticks.BluetoothPM5Service.ACTION_QUERY_STATE;
 import static com.github.zarandya.heartticks.BluetoothPM5Service.ACTION_SERVICE_STATE_CHANGED;
@@ -58,6 +59,7 @@ import static com.github.zarandya.heartticks.BluetoothPM5Service.SERVICE_STATE_I
 import static com.github.zarandya.heartticks.BluetoothHrmService.ACTION_HR_VALUE_UPDATE;
 import static com.github.zarandya.heartticks.db.BluetoothDeviceType.BIKE;
 import static com.github.zarandya.heartticks.db.BluetoothDeviceType.HRM;
+import static com.github.zarandya.heartticks.db.BluetoothDeviceType.OARLOCK;
 import static com.github.zarandya.heartticks.db.BluetoothDeviceType.PM5;
 import static java.util.TimeZone.getTimeZone;
 
@@ -70,6 +72,7 @@ public class MainActivity extends AppCompatActivity {
     private Button accelLogButton;
     private Button buttonHrm;
     private Button buttonBike;
+    private Button buttonOarlock;
     private Button shareButton;
     private TextView rateTextView;
 
@@ -89,6 +92,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean pm5BluetoothConnected = false;
     private boolean hrmBluetoothConnected = false;
     private boolean bikeBluetoothConnected = false;
+    private boolean oarlockBluetoothConnected = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -165,6 +169,24 @@ public class MainActivity extends AppCompatActivity {
                             App.getDB().getDevicesDao().devicesOfKind(BIKE);
                     runOnUiThread(() -> {
                         popupBluetoothDeviceSelector(buttonBike, intent, savedDevices, "");
+                    });
+                }).start();
+            }
+        });
+
+        buttonOarlock = findViewById(R.id.connect_oarlock_button);
+        buttonOarlock.setOnClickListener((v) -> {
+            if (!ensureBluetoothPermission()) return;
+            Intent intent = new Intent(this, BluetoothOarlockService.class);
+            intent.setAction(ACTION_CONNECT_BUTTON_PRESSED);
+            if (oarlockBluetoothConnected) {
+                startService(intent);
+            } else {
+                new Thread(() -> {
+                    final List<SavedBluetoothDevice> savedDevices =
+                            App.getDB().getDevicesDao().devicesOfKind(OARLOCK);
+                    runOnUiThread(() -> {
+                        popupBluetoothDeviceSelector(buttonOarlock, intent, savedDevices, "EmPower");
                     });
                 }).start();
             }
@@ -467,6 +489,18 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     buttonBike.setText(R.string.connecting);
                     bikeBluetoothConnected = false;
+                }
+            } else if (action.equals(ACTION_OARLOCK_SERVICE_STATE_CHANGED)) {
+                int state = intent.getIntExtra(EXTRA_SERVICE_STATE, -1);
+                if (state == SERVICE_STATE_IDLE) {
+                    buttonOarlock.setText(R.string.connect_oarlock_btn_text);
+                    oarlockBluetoothConnected = false;
+                } else if (state == SERVICE_STATE_CONNECTED) {
+                    buttonOarlock.setText(R.string.disconnect);
+                    oarlockBluetoothConnected = true;
+                } else {
+                    buttonOarlock.setText(R.string.connecting);
+                    oarlockBluetoothConnected = false;
                 }
             } else if (action.equals(ACTION_RATE_UPDATE)) {
                 rateTextView.setText(String.valueOf(intent.getIntExtra(EXTRA_RATE, 0)));
