@@ -395,7 +395,10 @@ public class MainActivity extends AppCompatActivity {
                 String deviceHardwareAddress = device.getAddress(); // MAC address
                 Log.d("BLUETOOTH", deviceName + " " + deviceHardwareAddress);
                 synchronized (this) {
-                    if (scanDevicePopupMenu != null && scanAddress.equals(SCAN_NEW_DEVICE) && !device.getName().isEmpty()) {
+                    if (scanDevicePopupMenu != null &&
+                            scanAddress.equals(SCAN_NEW_DEVICE) &&
+                            device.getName() != null &&
+                            !device.getName().isEmpty()) {
                         scannedDevices.add(device);
                         Menu menu = scanDevicePopupMenu.getMenu();
                         menu.add(1, scanDevicePopupMenuIID++, Menu.NONE, device.getName());
