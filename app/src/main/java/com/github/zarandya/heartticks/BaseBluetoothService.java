@@ -37,6 +37,7 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
+import com.github.zarandya.heartticks.db.DevicesDao;
 import com.github.zarandya.heartticks.db.SavedBluetoothDevice;
 
 import java.io.File;
@@ -246,6 +247,8 @@ public abstract class BaseBluetoothService extends Service {
                 Pair<UUID, UUID> ch = optionalCharacteristics.get(optionalSubscribingIndx);
                 characteristicExists =
                         subscribe(gatt, ch.getFirst(), ch.getSecond());
+                if (!characteristicExists)
+                    ++optionalSubscribingIndx;
             }
 
             if (!characteristicExists) {
@@ -504,10 +507,10 @@ public abstract class BaseBluetoothService extends Service {
     }
 
     private void saveDeviceToDatabase() {
-        if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
-            throw new RuntimeException("The service should not have started with missing permissions");
+        //if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
+        //    throw new RuntimeException("The service should not have started with missing permissions");
 
-        device.createBond();
+        //device.createBond();
 
         new Thread(() -> {
             if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
@@ -522,13 +525,24 @@ public abstract class BaseBluetoothService extends Service {
                 addressType = -3;
             }
 
-            App.getDB().getDevicesDao().plusAssign(new SavedBluetoothDevice(
-                    device.getAddress(),
-                    device.getName(),
-                    (SDK_INT >= Build.VERSION_CODES.R) ? device.getAlias() : device.getName(),
-                    addressType,
-                    getDeviceType()
-            ));
+            try {
+                DevicesDao dao = App.getDB().getDevicesDao();
+
+                String alias = (SDK_INT >= Build.VERSION_CODES.R) ? device.getAlias() : null;
+                if (alias == null)
+                    alias = device.getName();
+
+                dao.removeDevicesWithDisplayName(device.getName());
+
+                dao.plusAssign(new SavedBluetoothDevice(
+                        device.getAddress(),
+                        device.getName(),
+                        alias,
+                        addressType,
+                        getDeviceType()
+                ));
+            }
+            catch (Exception e) {}
         }).start();
     }
 }

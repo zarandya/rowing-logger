@@ -20,6 +20,9 @@ interface DevicesDao {
     @Query("SELECT * FROM $TABLE_BLUETOOTH_DEVICES WHERE $COLUMN_ADDRESS == :address")
     operator fun get(address: String): SavedBluetoothDevice
 
+    @Query("DELETE FROM $TABLE_BLUETOOTH_DEVICES WHERE ($COLUMN_ALIAS == :name) OR (($COLUMN_NAME == :name) AND (($COLUMN_ALIAS IS null) OR (LENGTH($COLUMN_ALIAS) == 0)))")
+    fun removeDevicesWithDisplayName(name: String): Unit
+
     @Insert(onConflict = REPLACE)
     operator fun plusAssign(device: SavedBluetoothDevice)
 }
