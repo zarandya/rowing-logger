@@ -151,6 +151,7 @@ public abstract class BaseBluetoothService extends Service {
 
         } catch (Exception e) {
             e.printStackTrace();
+            if (gattCallback != null) gattCallback.debugLog(e);
             errDisconnect();
         }
     }
@@ -178,6 +179,7 @@ public abstract class BaseBluetoothService extends Service {
             Pair<UUID, UUID> ch = connectedCharacteristics.get(0);
             unsubscribe(bluetoothGatt, ch.getFirst(), ch.getSecond());
         } catch (Exception e) {
+            if (gattCallback != null) gattCallback.debugLog(e);
             errDisconnect();
         }
     }
@@ -443,6 +445,7 @@ public abstract class BaseBluetoothService extends Service {
                 }
             };
         } catch (IOException e) {
+            if (gattCallback != null) gattCallback.debugLog(e);
             e.printStackTrace();
         }
     }
@@ -490,6 +493,7 @@ public abstract class BaseBluetoothService extends Service {
             sendState();
         } catch (Exception e) {
             e.printStackTrace();
+            if (gattCallback != null) gattCallback.debugLog(e);
             errDisconnect();
         }
     }
@@ -542,7 +546,9 @@ public abstract class BaseBluetoothService extends Service {
                         getDeviceType()
                 ));
             }
-            catch (Exception e) {}
+            catch (Exception e) {
+                if (gattCallback != null) gattCallback.debugLog(e);
+            }
         }).start();
     }
 }

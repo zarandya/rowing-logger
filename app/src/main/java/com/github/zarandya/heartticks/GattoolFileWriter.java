@@ -14,7 +14,12 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.lang.reflect.Method;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 import static android.bluetooth.BluetoothGatt.GATT_CONNECTION_CONGESTED;
 import static android.bluetooth.BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION;
@@ -211,7 +216,7 @@ public class GattoolFileWriter extends BluetoothGattCallback {
                 out.write(prompt);
                 out.write("char-desc\n");
                 for (BluetoothGattService service : gatt.getServices()) {
-                    out.write("#service");
+                    out.write("#service\n");
                     out.write(String.format("handle: 0x%04x, uuid: ", service.getInstanceId()));
                     out.write(service.getUuid().toString());
                     out.write("\n");
@@ -291,6 +296,22 @@ public class GattoolFileWriter extends BluetoothGattCallback {
                 e.printStackTrace();
             }
 
+        }
+    }
+
+    public void debugLog(Exception e) {
+        if (BuildConfig.DEBUG && out != null) {
+            try {
+                synchronized (out) {
+                    StringWriter sw = new StringWriter();
+                    e.printStackTrace(new PrintWriter(sw));
+                    for (String line : sw.toString().split("\n")) {
+                        out.write("#ERR: " + line + "\n");
+                    }
+                }
+            } catch (Exception f) {
+                f.printStackTrace();
+            }
         }
     }
 
