@@ -103,6 +103,8 @@ public class MainActivity extends AppCompatActivity {
         filter.addAction(BluetoothDevice.ACTION_FOUND);
         filter.addAction(ACTION_SERVICE_STATE_CHANGED);
         filter.addAction(ACTION_HRM_SERVICE_STATE_CHANGED);
+        filter.addAction(ACTION_BIKE_SERVICE_STATE_CHANGED);
+        filter.addAction(ACTION_OARLOCK_SERVICE_STATE_CHANGED);
         filter.addAction(ACTION_RATE_UPDATE);
         filter.addAction(ACTION_SET_FILE_TO_SEND);
         filter.addAction(ACTION_HR_VALUE_UPDATE);
