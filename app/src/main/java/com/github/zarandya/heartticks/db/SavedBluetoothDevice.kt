@@ -1,5 +1,13 @@
 package com.github.zarandya.heartticks.db
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
+import android.content.pm.PackageManager
+import android.os.Build.VERSION
+import android.os.Build.VERSION.SDK_INT
+import android.os.Build.VERSION_CODES
+import androidx.core.app.ActivityCompat
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
@@ -30,3 +38,7 @@ data class SavedBluetoothDevice (
         val deviceType: Int
         )
 
+// TODO find a better place to put this.
+val BluetoothDevice.aliasOrName: String
+        @SuppressLint("MissingPermission") get() =
+                if (SDK_INT >= VERSION_CODES.R) (alias ?: name) else name

@@ -9,4 +9,6 @@
     <string name="connect_hrm_btn_text">CONNECT HRM</string>
     <string name="connect_bike_btn_text">CONNECT BIKE (experimental)</string>
     <string name="connect_oarlock_btn_text">CONNECT OARLOCK (experimental)</string>
+    <string name="disconnect_btn_text">Disconnect</string>
+    <string name="share_btn_text">Share</string>
 </resources>

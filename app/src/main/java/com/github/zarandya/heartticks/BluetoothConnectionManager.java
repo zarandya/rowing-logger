@@ -1,7 +1,6 @@
 package com.github.zarandya.heartticks;
 
 import static android.Manifest.permission.BLUETOOTH_CONNECT;
-import static android.app.NotificationManager.IMPORTANCE_LOW;
 import static android.bluetooth.BluetoothGatt.GATT_SUCCESS;
 import static android.bluetooth.BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE;
 import static android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE;
@@ -9,18 +8,10 @@ import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
 import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
 import static android.content.pm.PackageManager.PERMISSION_GRANTED;
 import static android.os.Build.VERSION.SDK_INT;
-import static androidx.core.app.NotificationCompat.PRIORITY_LOW;
 import static com.github.zarandya.heartticks.MainActivity.ACTION_SET_FILE_TO_SEND;
-import static com.github.zarandya.heartticks.MainActivity.EXTRA_DEVICE;
 import static com.github.zarandya.heartticks.MainActivity.EXTRA_FILE_TO_SEND;
-import static com.github.zarandya.heartticks.R.string.bluetooth_service_channel_name;
 import static java.util.TimeZone.getTimeZone;
 
-import android.annotation.SuppressLint;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.Service;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
@@ -29,11 +20,10 @@ import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.content.Intent;
 import android.os.Build;
-import android.os.IBinder;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
-import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
@@ -43,10 +33,8 @@ import com.github.zarandya.heartticks.db.SavedBluetoothDevice;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -54,7 +42,7 @@ import java.util.UUID;
 
 import kotlin.Pair;
 
-public abstract class BaseBluetoothService extends Service {
+public abstract class BluetoothConnectionManager {
     public static final int SERVICE_STATE_IDLE = 0;
     public static final int SERVICE_STATE_CONNECTING = 1;
     public static final int SERVICE_STATE_SUBSCRIBING = 2;
@@ -76,71 +64,36 @@ public abstract class BaseBluetoothService extends Service {
     private GattoolFileWriter gattCallback;
     private String filename;
 
-    private BluetoothDevice device = null;
+    private final @NonNull BluetoothDevice device;
 
-    protected abstract String getNotificationChannelId();
+    protected BluetoothService service;
 
     protected abstract int getTimestampWritePeriod();
 
-    @Override
-    public void onCreate() {
-        super.onCreate();
-
+    public BluetoothConnectionManager(@NonNull BluetoothService service, @NonNull BluetoothDevice device) {
+        this.device = device;
+        this.service = service;
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
 
-        if (SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(getNotificationChannelId(), getString(bluetooth_service_channel_name), IMPORTANCE_LOW);
-            channel.setDescription(getString(bluetooth_service_channel_name));
-            NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-            nm.createNotificationChannel(channel);
-        }
-
         new Timer().scheduleAtFixedRate(new TimerTask() {
-            @SuppressLint("SimpleDateFormat")
-            final SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-
-            {
-                df.setTimeZone(getTimeZone("UTC"));
-            }
-
             @Override
             public void run() {
                 final GattoolFileWriter gaf = gattCallback;
                 if (gaf != null) {
-                    gaf.writeTime("time " + df.format(new Date()));
+                    gaf.writeTime();
                 }
             }
         }, getTimestampWritePeriod(), getTimestampWritePeriod()); // TODO this was 5000 for ergs and 500 for HRM, why?
     }
 
-    @Override
-    public IBinder onBind(Intent intent) {
-        return null;
-    }
-
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent.getAction().equals(ACTION_CONNECT_BUTTON_PRESSED)) {
-            if (state == SERVICE_STATE_IDLE) {
-                device = intent.getParcelableExtra(EXTRA_DEVICE);
-                startConnect();
-            } else if (state == SERVICE_STATE_CONNECTED) {
-                startDisconnect();
-            }
-        } else if (intent.getAction().equals(ACTION_QUERY_STATE)) {
-            sendState();
-        }
-        return START_NOT_STICKY;
-    }
+    public BluetoothDevice getDevice() { return device; }
 
     protected abstract String generateOutputFilename(String Base);
 
-    private void startConnect() {
-        if (device == null)
-            return;
+    public void startConnect() {
         setState(SERVICE_STATE_CONNECTING);
         try {
-            File externalGatt = new File(ContextCompat.getExternalFilesDirs(this, null)[0].getPath() + "/gatt");
+            File externalGatt = new File(ContextCompat.getExternalFilesDirs(service, null)[0].getPath() + "/gatt");
             if (!externalGatt.isDirectory()) {
                 externalGatt.mkdir();
             }
@@ -173,7 +126,7 @@ public abstract class BaseBluetoothService extends Service {
         // TODO implement this
     }
 
-    private void startDisconnect() {
+    public void startDisconnect() {
         setState(SERVICE_STATE_DISCONNECTING);
         try {
             Pair<UUID, UUID> ch = connectedCharacteristics.get(0);
@@ -187,7 +140,7 @@ public abstract class BaseBluetoothService extends Service {
     private void errDisconnect() {
         final BluetoothGatt g = bluetoothGatt;
         if (g != null) {
-            if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
+            if (ActivityCompat.checkSelfPermission(service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
                 throw new RuntimeException("The service should not have started with missing permissions");
             g.close();
         }
@@ -201,15 +154,13 @@ public abstract class BaseBluetoothService extends Service {
         setState(SERVICE_STATE_IDLE);
     }
 
-    private boolean connected = false;
-
 
     private synchronized void connect(BluetoothDevice device) {
         if (gattCallback == null)
             return;
-        if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
+        if (ActivityCompat.checkSelfPermission(service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
             throw new RuntimeException("The service should not have started with missing permissions");
-        bluetoothGatt = device.connectGatt(this, false, gattCallback);
+        bluetoothGatt = device.connectGatt(service, false, gattCallback);
         setState(SERVICE_STATE_SUBSCRIBING);
     }
 
@@ -269,7 +220,7 @@ public abstract class BaseBluetoothService extends Service {
         final BluetoothGattDescriptor descriptor = characteristic.getDescriptor(GATT_CLIENT_CONFIGURATION_CHARACTERISTIC_UUID);
         if (descriptor == null)
             return false;
-        if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
+        if (ActivityCompat.checkSelfPermission(this.service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
             throw new RuntimeException("The service should not have started with missing permissions");
         gatt.setCharacteristicNotification(characteristic, true);
         descriptor.setValue(ENABLE_NOTIFICATION_VALUE);
@@ -301,7 +252,7 @@ public abstract class BaseBluetoothService extends Service {
         final BluetoothGattDescriptor descriptor = characteristic.getDescriptor(GATT_CLIENT_CONFIGURATION_CHARACTERISTIC_UUID);
         if (descriptor == null)
             return false;
-        if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
+        if (ActivityCompat.checkSelfPermission(this.service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
             throw new RuntimeException("The service should not have started with missing permissions");
         gatt.setCharacteristicNotification(characteristic, false);
         descriptor.setValue(DISABLE_NOTIFICATION_VALUE);
@@ -321,7 +272,7 @@ public abstract class BaseBluetoothService extends Service {
             gattCallback = new GattoolFileWriter(filename, "[" + mac.toLowerCase() + "][LE]> ") {
                 @Override
                 protected void editCharacteristicValueBeforeLog(BluetoothGattCharacteristic characteristic, byte[] value) {
-                    BaseBluetoothService.this.editCharacteristicValueBeforeLog(characteristic, value);
+                    BluetoothConnectionManager.this.editCharacteristicValueBeforeLog(characteristic, value);
                 }
 
                 @Override
@@ -341,7 +292,7 @@ public abstract class BaseBluetoothService extends Service {
                     super.onConnectionStateChange(gatt, status, newState);
                     Log.d("GATT", "CONNECTION STATE CHANGE newState: " + newState + " status: " + status);
                     if (newState == STATE_CONNECTED) {
-                        if (ActivityCompat.checkSelfPermission(BaseBluetoothService.this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
+                        if (ActivityCompat.checkSelfPermission(service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
                             throw new RuntimeException("The service should not have started with missing permissions");
                         gatt.discoverServices();
                     }
@@ -413,7 +364,7 @@ public abstract class BaseBluetoothService extends Service {
                             UUID uuid = descriptor.getCharacteristic().getUuid();
                             boolean finishDisconnect = onSuccessfulUnsubscribe(gatt, serviceUUID, uuid);
                             if (finishDisconnect) {
-                                if (ActivityCompat.checkSelfPermission(BaseBluetoothService.this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
+                                if (ActivityCompat.checkSelfPermission(service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
                                     throw new RuntimeException("The service should not have started with missing permissions");
                                 bluetoothGatt.disconnect();
                                 bluetoothGatt.close();
@@ -462,20 +413,6 @@ public abstract class BaseBluetoothService extends Service {
             state = s;
             ++stateChangeCounter;
             final long stateChangeCount = stateChangeCounter;
-            if (s == SERVICE_STATE_CONNECTED) {
-                if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
-                    throw new RuntimeException("The service should not have started with missing permissions");
-                Notification notification = new NotificationCompat.Builder(this, getNotificationChannelId())
-                        .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-                        .setContentText("Connected to " + bluetoothGatt.getDevice().getName())
-                        .setContentText("")
-                        .setStyle(new NotificationCompat.BigTextStyle().bigText(""))
-                        .setPriority(PRIORITY_LOW)
-                        .build();
-                startForeground(83, notification);
-            } else {
-                stopForeground(true);
-            }
             if (s != SERVICE_STATE_CONNECTED && s != SERVICE_STATE_IDLE) {
                 new Timer().schedule(new TimerTask() {
                     @Override
@@ -490,7 +427,10 @@ public abstract class BaseBluetoothService extends Service {
             if (s == SERVICE_STATE_CONNECTED) {
                 saveDeviceToDatabase();
             }
-            sendState();
+            service.sendState();
+            if (s == SERVICE_STATE_IDLE) {
+                service.onDisconnectFinished(this);
+            }
         } catch (Exception e) {
             e.printStackTrace();
             if (gattCallback != null) gattCallback.debugLog(e);
@@ -502,12 +442,10 @@ public abstract class BaseBluetoothService extends Service {
 
     protected abstract int getDeviceType();
 
-    protected abstract void sendState();
-
     private void sendFileToShare() {
         Intent broadcast = new Intent(ACTION_SET_FILE_TO_SEND);
         broadcast.putExtra(EXTRA_FILE_TO_SEND, filename);
-        LocalBroadcastManager.getInstance(this).sendBroadcast(broadcast);
+        LocalBroadcastManager.getInstance(service).sendBroadcast(broadcast);
     }
 
     private void saveDeviceToDatabase() {
@@ -517,7 +455,7 @@ public abstract class BaseBluetoothService extends Service {
         //device.createBond();
 
         new Thread(() -> {
-            if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
+            if (ActivityCompat.checkSelfPermission(service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
                 throw new RuntimeException("The service should not have started with missing permissions");
             int addressType;
             try {

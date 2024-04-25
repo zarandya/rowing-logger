@@ -1,24 +1,26 @@
 package com.github.zarandya.heartticks;
 
-import static com.github.zarandya.heartticks.BluetoothHrmService.ACTION_HR_VALUE_UPDATE;
-import static com.github.zarandya.heartticks.BluetoothHrmService.EXTRA_HR_VALUE;
+import static com.github.zarandya.heartticks.BluetoothHrmConnectionManager.ACTION_HR_VALUE_UPDATE;
+import static com.github.zarandya.heartticks.BluetoothHrmConnectionManager.EXTRA_HR_VALUE;
 import static com.github.zarandya.heartticks.db.BluetoothDeviceType.PM5;
 import static java.util.TimeZone.getTimeZone;
 
 import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 
+import androidx.annotation.NonNull;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.UUID;
 
-public class BluetoothPM5Service extends BaseBluetoothService {
+public class BluetoothPM5ConnectionManager extends BluetoothConnectionManager {
 
     public static final String ACTION_CONNECT_BUTTON_PRESSED = "action_connect_button_pressed";
     public static final String ACTION_QUERY_STATE = "sction_query_state";
@@ -33,27 +35,16 @@ public class BluetoothPM5Service extends BaseBluetoothService {
 
     private int hrFromBluetoothHrm = 0;
 
-    @Override
-    protected String getNotificationChannelId() {
-        return CHANNEL_ID;
+    public BluetoothPM5ConnectionManager(@NonNull BluetoothService service, @NonNull BluetoothDevice device) {
+        super(service, device);
+
+        registerCharacteristic(C2_PM_CONTROL_SERVICE_UUID, C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID, true);
+        registerCharacteristic(C2_PM_CONTROL_SERVICE_UUID, C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID, false);
     }
 
     @Override
     protected int getTimestampWritePeriod() {
         return 500;
-    }
-
-    @Override
-    public void onCreate() {
-        super.onCreate();
-
-        registerCharacteristic(C2_PM_CONTROL_SERVICE_UUID, C2_MULTIPLEXED_INFORMATION_CHARACTERISTIC_UUID, true);
-        registerCharacteristic(C2_PM_CONTROL_SERVICE_UUID, C2_FORCE_CURVE_DATA_CHARACTERISTIC_UUID, false);
-
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(ACTION_HR_VALUE_UPDATE);
-        registerReceiver(receiver, filter);
-        LocalBroadcastManager.getInstance(this).registerReceiver(receiver, filter);
     }
 
     @Override
@@ -92,28 +83,8 @@ public class BluetoothPM5Service extends BaseBluetoothService {
     @Override
     protected int getDeviceType() { return PM5; }
 
-    @Override
-    protected void sendState() {
-        Intent broadcast = new Intent(ACTION_SERVICE_STATE_CHANGED);
-        broadcast.putExtra(EXTRA_SERVICE_STATE, getState());
-        LocalBroadcastManager.getInstance(this).sendBroadcast(broadcast);
+    public void receiveHeartRate(int hr) {
+        hrFromBluetoothHrm = hr;
     }
-
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        // Don't forget to unregister the ACTION_FOUND receiver.
-        unregisterReceiver(receiver);
-    }
-
-    private final BroadcastReceiver receiver = new BroadcastReceiver() {
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if (action.equals(ACTION_HR_VALUE_UPDATE)) {
-                hrFromBluetoothHrm = intent.getIntExtra(EXTRA_HR_VALUE, 0);
-            }
-        }
-
-    };
 
 }

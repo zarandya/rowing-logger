@@ -1,5 +1,6 @@
 package com.github.zarandya.heartticks;
 
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
@@ -18,7 +19,9 @@ import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.reflect.Method;
+import java.text.SimpleDateFormat;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.stream.Collectors;
 
 import static android.bluetooth.BluetoothGatt.GATT_CONNECTION_CONGESTED;
@@ -32,6 +35,7 @@ import static android.bluetooth.BluetoothGatt.GATT_SUCCESS;
 import static android.bluetooth.BluetoothGatt.GATT_WRITE_NOT_PERMITTED;
 import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
 import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
+import static java.util.TimeZone.getTimeZone;
 
 public class GattoolFileWriter extends BluetoothGattCallback {
 
@@ -271,13 +275,20 @@ public class GattoolFileWriter extends BluetoothGattCallback {
                 return "Unexpected error code";
         }
     }
-    
-    public void writeTime(String timeStr) {
+
+    @SuppressLint("SimpleDateFormat")
+    final SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
+
+    {
+        df.setTimeZone(getTimeZone("UTC"));
+    }
+
+    public void writeTime() {
+        Date time = new Date();
         synchronized (out) {
             try {
                 out.write(prompt);
-                out.write("#");
-                out.write(timeStr);
+                out.write("#time " + df.format(time));
                 out.write("\n");
             } catch (IOException e) {
                 e.printStackTrace();

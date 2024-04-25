@@ -4,19 +4,20 @@ import static com.github.zarandya.heartticks.db.BluetoothDeviceType.HRM;
 import static java.util.TimeZone.getTimeZone;
 
 import android.annotation.SuppressLint;
-import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothDevice;
 import android.content.Intent;
 
+import androidx.annotation.NonNull;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.UUID;
 
-public class BluetoothBikeService extends BaseBluetoothService {
+public class BluetoothBikeConnectionManager extends BluetoothConnectionManager {
 
     public static final String ACTION_BIKE_SERVICE_STATE_CHANGED = "action_bike_service_state_changed";
-    public static final String EXTRA_SERVICE_STATE = BaseBluetoothService.EXTRA_SERVICE_STATE;
+    public static final String EXTRA_SERVICE_STATE = BluetoothConnectionManager.EXTRA_SERVICE_STATE;
 
     static final UUID BIKE_SPEED_CADENCE_SERVICE_UUID =   UUID.fromString("00001816-0000-1000-8000-00805f9b34fb");
     static final UUID BIKE_POWER_UUID = UUID.fromString("00001818-0000-1000-8000-00805f9b34fb");
@@ -34,19 +35,8 @@ public class BluetoothBikeService extends BaseBluetoothService {
 
     public static final String CHANNEL_ID = "io.github.zarandya.beatrate.BLUETOOTH_BIKE_SERVICE_NOTIFICATION";
 
-    @Override
-    protected String getNotificationChannelId() {
-        return CHANNEL_ID;
-    }
-
-    @Override
-    protected int getTimestampWritePeriod() {
-        return 5000;
-    }
-
-    @Override
-    public void onCreate() {
-        super.onCreate();
+    public BluetoothBikeConnectionManager(@NonNull BluetoothService service, @NonNull BluetoothDevice device) {
+        super(service, device);
 
         registerCharacteristic(FITNESS_MACHINE_SERVICE_UUID, BIKE_INDOOR_DATA, true);
         registerCharacteristic(FITNESS_MACHINE_SERVICE_UUID, FITNESS_MACHINE_STATUS_UUID, false);
@@ -58,6 +48,10 @@ public class BluetoothBikeService extends BaseBluetoothService {
         registerCharacteristicForReadOnce(BIKE_POWER_UUID, BIKE_POWER_FEATURE_UUID);
     }
 
+    @Override
+    protected int getTimestampWritePeriod() {
+        return 5000;
+    }
 
     @Override
     protected String generateOutputFilename(String base) {
@@ -75,12 +69,5 @@ public class BluetoothBikeService extends BaseBluetoothService {
 
     @Override
     protected int getDeviceType() { return HRM; }
-
-    @Override
-    protected void sendState() {
-        Intent broadcast = new Intent(ACTION_BIKE_SERVICE_STATE_CHANGED);
-        broadcast.putExtra(EXTRA_SERVICE_STATE, getState());
-        LocalBroadcastManager.getInstance(this).sendBroadcast(broadcast);
-    }
 
 }

@@ -22,6 +22,7 @@ import android.content.IntentSender;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Parcelable;
 import android.util.Log;
 import android.view.Menu;
 import android.view.View;
@@ -46,35 +47,40 @@ import static android.os.Build.VERSION.SDK_INT;
 import static com.github.zarandya.heartticks.AccelerometerService.ACTION_ACCEL_LOG_BUTTON_PRESSED;
 import static com.github.zarandya.heartticks.AccelerometerService.ACTION_RATE_UPDATE;
 import static com.github.zarandya.heartticks.AccelerometerService.EXTRA_RATE;
-import static com.github.zarandya.heartticks.BluetoothBikeService.ACTION_BIKE_SERVICE_STATE_CHANGED;
-import static com.github.zarandya.heartticks.BluetoothHrmService.ACTION_HRM_SERVICE_STATE_CHANGED;
-import static com.github.zarandya.heartticks.BluetoothHrmService.EXTRA_HR_VALUE;
-import static com.github.zarandya.heartticks.BluetoothOarlockService.ACTION_OARLOCK_SERVICE_STATE_CHANGED;
-import static com.github.zarandya.heartticks.BluetoothPM5Service.ACTION_CONNECT_BUTTON_PRESSED;
-import static com.github.zarandya.heartticks.BluetoothPM5Service.ACTION_QUERY_STATE;
-import static com.github.zarandya.heartticks.BluetoothPM5Service.ACTION_SERVICE_STATE_CHANGED;
-import static com.github.zarandya.heartticks.BluetoothPM5Service.EXTRA_SERVICE_STATE;
-import static com.github.zarandya.heartticks.BluetoothPM5Service.SERVICE_STATE_CONNECTED;
-import static com.github.zarandya.heartticks.BluetoothPM5Service.SERVICE_STATE_IDLE;
-import static com.github.zarandya.heartticks.BluetoothHrmService.ACTION_HR_VALUE_UPDATE;
+import static com.github.zarandya.heartticks.BluetoothBikeConnectionManager.ACTION_BIKE_SERVICE_STATE_CHANGED;
+import static com.github.zarandya.heartticks.BluetoothHrmConnectionManager.ACTION_HRM_SERVICE_STATE_CHANGED;
+import static com.github.zarandya.heartticks.BluetoothHrmConnectionManager.EXTRA_HR_VALUE;
+import static com.github.zarandya.heartticks.BluetoothOarlockConnectionManager.ACTION_OARLOCK_SERVICE_STATE_CHANGED;
+import static com.github.zarandya.heartticks.BluetoothPM5ConnectionManager.ACTION_CONNECT_BUTTON_PRESSED;
+import static com.github.zarandya.heartticks.BluetoothPM5ConnectionManager.ACTION_QUERY_STATE;
+import static com.github.zarandya.heartticks.BluetoothPM5ConnectionManager.ACTION_SERVICE_STATE_CHANGED;
+import static com.github.zarandya.heartticks.BluetoothPM5ConnectionManager.EXTRA_SERVICE_STATE;
+import static com.github.zarandya.heartticks.BluetoothPM5ConnectionManager.SERVICE_STATE_CONNECTED;
+import static com.github.zarandya.heartticks.BluetoothPM5ConnectionManager.SERVICE_STATE_IDLE;
+import static com.github.zarandya.heartticks.BluetoothHrmConnectionManager.ACTION_HR_VALUE_UPDATE;
+import static com.github.zarandya.heartticks.BluetoothService.ACTION_BLUETOOTH_SERVICE_STATE_CHANGED;
+import static com.github.zarandya.heartticks.BluetoothService.ACTION_CONNECT_DEVICE;
+import static com.github.zarandya.heartticks.BluetoothService.ACTION_DISCONNECT_DEVICE;
+import static com.github.zarandya.heartticks.BluetoothService.EXTRA_DEVICE_TYPE;
 import static com.github.zarandya.heartticks.db.BluetoothDeviceType.BIKE;
 import static com.github.zarandya.heartticks.db.BluetoothDeviceType.HRM;
 import static com.github.zarandya.heartticks.db.BluetoothDeviceType.OARLOCK;
 import static com.github.zarandya.heartticks.db.BluetoothDeviceType.PM5;
+import static com.github.zarandya.heartticks.db.SavedBluetoothDeviceKt.getAliasOrName;
 import static java.util.TimeZone.getTimeZone;
 
 import com.github.zarandya.heartticks.db.SavedBluetoothDevice;
+import com.github.zarandya.heartticks.db.SavedBluetoothDeviceKt;
 
 public class MainActivity extends AppCompatActivity {
 
     public static final String SCAN_NEW_DEVICE = "-1";
     private Button button;
+    private Button disconnectButton;
     private Button accelLogButton;
-    private Button buttonHrm;
-    private Button buttonBike;
-    private Button buttonOarlock;
     private Button shareButton;
     private TextView rateTextView;
+    private TextView statusTextView;
 
     private static final int REQUEST_ENABLE_BT = 201;
     private static final int REQUEST_STORAGE_PERMISSION = 201;
@@ -89,10 +95,8 @@ public class MainActivity extends AppCompatActivity {
 
     private BluetoothAdapter bluetoothAdapter;
 
-    private boolean pm5BluetoothConnected = false;
-    private boolean hrmBluetoothConnected = false;
-    private boolean bikeBluetoothConnected = false;
-    private boolean oarlockBluetoothConnected = false;
+    private BluetoothDevice[] devicesConnected = null;
+    private BluetoothDevice[] devicesConnectedListedInMenu = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -101,10 +105,7 @@ public class MainActivity extends AppCompatActivity {
 
         IntentFilter filter = new IntentFilter();
         filter.addAction(BluetoothDevice.ACTION_FOUND);
-        filter.addAction(ACTION_SERVICE_STATE_CHANGED);
-        filter.addAction(ACTION_HRM_SERVICE_STATE_CHANGED);
-        filter.addAction(ACTION_BIKE_SERVICE_STATE_CHANGED);
-        filter.addAction(ACTION_OARLOCK_SERVICE_STATE_CHANGED);
+        filter.addAction(ACTION_BLUETOOTH_SERVICE_STATE_CHANGED);
         filter.addAction(ACTION_RATE_UPDATE);
         filter.addAction(ACTION_SET_FILE_TO_SEND);
         filter.addAction(ACTION_HR_VALUE_UPDATE);
@@ -117,20 +118,49 @@ public class MainActivity extends AppCompatActivity {
 
         button = findViewById(R.id.button);
         button.setOnClickListener((v) -> {
-            if (!ensureBluetoothPermission()) return;
-            Intent intent = new Intent(this, BluetoothPM5Service.class);
-            intent.setAction(ACTION_CONNECT_BUTTON_PRESSED);
-            if (pm5BluetoothConnected) {
-                startService(intent);
-            } else {
+            PopupMenu menu = new PopupMenu(this, button);
+            Menu menuBuilder = menu.getMenu();
+
+            menuBuilder.add(0, PM5, 0, "PM5");
+            menuBuilder.add(0, HRM, 1, "HRM");
+            menuBuilder.add(0, BIKE, 2, "Bike");
+            menuBuilder.add(0, OARLOCK, 3, "Oarlock");
+
+            menu.setOnMenuItemClickListener((item) -> {
                 new Thread(() -> {
                     final List<SavedBluetoothDevice> savedDevices =
-                            App.getDB().getDevicesDao().devicesOfKind(PM5);
-                    runOnUiThread(() -> {
-                        popupBluetoothDeviceSelector(button, intent, savedDevices, "");
-                    });
+                            App.getDB().getDevicesDao().devicesOfKind(item.getItemId());
+                    runOnUiThread(() ->
+                            popupBluetoothDeviceSelector(button, savedDevices, item.getItemId()));
                 }).start();
+                return true;
+            });
+
+            menu.show();
+        });
+
+        disconnectButton = findViewById(R.id.disconnect_button);
+        disconnectButton.setOnClickListener((v) -> {
+            // This works because when the list of devices changes a new array is allocated
+            devicesConnectedListedInMenu = devicesConnected;
+            Log.d("DEVICES CONNECTED", devicesConnected.toString());
+            if (devicesConnectedListedInMenu == null) return;
+
+            PopupMenu menu = new PopupMenu(this, button);
+            Menu menuBuilder = menu.getMenu();
+
+            for (int i = 0; i < devicesConnectedListedInMenu.length; ++i) {
+                String name;
+
+                menuBuilder.add(0, i, i, getAliasOrName(devicesConnectedListedInMenu[i]));
             }
+
+            menu.setOnMenuItemClickListener((item) -> {
+                disconnectFromDevice(devicesConnectedListedInMenu[item.getItemId()]);
+                return true;
+            });
+
+            menu.show();
         });
 
         accelLogButton = findViewById(R.id.accel_log_btn);
@@ -138,60 +168,6 @@ public class MainActivity extends AppCompatActivity {
             Intent intent = new Intent(this, AccelerometerService.class);
             intent.setAction(ACTION_ACCEL_LOG_BUTTON_PRESSED);
             startService(intent);
-        });
-
-        buttonHrm = findViewById(R.id.connect_hrm_button);
-        buttonHrm.setOnClickListener((v) -> {
-            if (!ensureBluetoothPermission()) return;
-            Intent intent = new Intent(this, BluetoothHrmService.class);
-            intent.setAction(ACTION_CONNECT_BUTTON_PRESSED);
-            if (hrmBluetoothConnected) {
-                startService(intent);
-            } else {
-                new Thread(() -> {
-                    final List<SavedBluetoothDevice> savedDevices =
-                            App.getDB().getDevicesDao().devicesOfKind(HRM);
-                    runOnUiThread(() -> {
-                        popupBluetoothDeviceSelector(buttonHrm, intent, savedDevices, "");
-                    });
-                }).start();
-            }
-        });
-
-        buttonBike = findViewById(R.id.connect_bike_button);
-        buttonBike.setOnClickListener((v) -> {
-            if (!ensureBluetoothPermission()) return;
-            Intent intent = new Intent(this, BluetoothBikeService.class);
-            intent.setAction(ACTION_CONNECT_BUTTON_PRESSED);
-            if (bikeBluetoothConnected) {
-                startService(intent);
-            } else {
-                new Thread(() -> {
-                    final List<SavedBluetoothDevice> savedDevices =
-                            App.getDB().getDevicesDao().devicesOfKind(BIKE);
-                    runOnUiThread(() -> {
-                        popupBluetoothDeviceSelector(buttonBike, intent, savedDevices, "");
-                    });
-                }).start();
-            }
-        });
-
-        buttonOarlock = findViewById(R.id.connect_oarlock_button);
-        buttonOarlock.setOnClickListener((v) -> {
-            if (!ensureBluetoothPermission()) return;
-            Intent intent = new Intent(this, BluetoothOarlockService.class);
-            intent.setAction(ACTION_CONNECT_BUTTON_PRESSED);
-            if (oarlockBluetoothConnected) {
-                startService(intent);
-            } else {
-                new Thread(() -> {
-                    final List<SavedBluetoothDevice> savedDevices =
-                            App.getDB().getDevicesDao().devicesOfKind(OARLOCK);
-                    runOnUiThread(() -> {
-                        popupBluetoothDeviceSelector(buttonOarlock, intent, savedDevices, "EmPower");
-                    });
-                }).start();
-            }
         });
 
         shareButton = findViewById(R.id.share_btn);
@@ -209,15 +185,13 @@ public class MainActivity extends AppCompatActivity {
         });
 
         rateTextView = findViewById(R.id.rate_text_view);
+        statusTextView = findViewById(R.id.status_text_view);
 
-        Intent queryState = new Intent(this, BluetoothPM5Service.class);
+        Intent queryState = new Intent(this, BluetoothPM5ConnectionManager.class);
         queryState.setAction(ACTION_QUERY_STATE);
         startService(queryState);
 
         bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-
-        companionScanNextServiceIntent = null;
-
     }
 
     private boolean ensureBluetoothPermission() {
@@ -240,7 +214,19 @@ public class MainActivity extends AppCompatActivity {
         unregisterReceiver(receiver);
     }
 
-    private final void popupBluetoothDeviceSelector(View view, Intent intent, List<SavedBluetoothDevice> savedDevices, String prefix) {
+    private void popupBluetoothDeviceSelector(View view, List<SavedBluetoothDevice> savedDevices, int kind) {
+        final String prefix;
+        switch (kind) {
+            case PM5:
+                prefix = "PM5 ";
+                break;
+            case OARLOCK:
+                prefix = "EmPower";
+                break;
+            default:
+                prefix = "";
+        }
+
         PopupMenu menu = new PopupMenu(this, view);
         Menu menuBuilder = menu.getMenu();
 
@@ -274,10 +260,10 @@ public class MainActivity extends AppCompatActivity {
             final int selected = item.getItemId();
             boolean needsScan = false;
             String scanAddress = SCAN_NEW_DEVICE;
+            BluetoothDevice dev = null;
 
             if (selected < scanIID) {
                 SavedBluetoothDevice savedDevice = savedDevices.get(selected);
-                BluetoothDevice dev = null;
                 for (BluetoothDevice dev2: bondedDevices) {
                    if (dev2.getAddress().equals(savedDevice.getAddress())) {
                        dev = dev2;
@@ -304,19 +290,16 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }
                 }
-                if (!needsScan) {
-                    intent.putExtra(EXTRA_DEVICE, dev);
-                }
             } else if (selected >= bondedBaseIID) {
-                intent.putExtra(EXTRA_DEVICE, bondedDevices.get(selected - bondedBaseIID));
+                dev = bondedDevices.get(selected - bondedBaseIID);
             } else {
                 needsScan = true;
             }
             if (!needsScan) {
-                startService(intent);
+                connectToDevice(dev, kind);
             } else {
                 if (SDK_INT >= Build.VERSION_CODES.O) {
-                    scanDevice(scanAddress, intent, view);
+                    scanDevice(scanAddress, kind, view);
                 }
             }
             return true;
@@ -324,14 +307,29 @@ public class MainActivity extends AppCompatActivity {
         menu.show();
     }
 
-    private Intent companionScanNextServiceIntent = null;
+    private void connectToDevice(BluetoothDevice device, int type) {
+        Intent intent = new Intent(this, BluetoothService.class);
+        intent.setAction(ACTION_CONNECT_DEVICE);
+        intent.putExtra(EXTRA_DEVICE, device);
+        intent.putExtra(EXTRA_DEVICE_TYPE, type);
+        startService(intent);
+    }
+
+    private void disconnectFromDevice(BluetoothDevice device) {
+        Intent intent = new Intent(this, BluetoothService.class);
+        intent.setAction(ACTION_DISCONNECT_DEVICE);
+        intent.putExtra(EXTRA_DEVICE, device);
+        startService(intent);
+    }
+
+    private int companionScanNextDeviceType = -1;
     private PopupMenu scanDevicePopupMenu = null;
     private int scanDevicePopupMenuIID = 0;
     private ArrayList<BluetoothDevice> scannedDevices = null;
     private String scanAddress = null;
 
     @RequiresApi(api = Build.VERSION_CODES.O)
-    private final void scanDevice(String deviceAddress, Intent intent, View view) {
+    private void scanDevice(String deviceAddress, int type, View view) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             return;
         }
@@ -340,11 +338,11 @@ public class MainActivity extends AppCompatActivity {
             throw new RuntimeException("The function should not have been called with missing permissions");
 
         synchronized (this) {
-            if (companionScanNextServiceIntent != null) {
+            if (companionScanNextDeviceType != -1) {
                 Log.e("Companion", "A companion scan is already running");
                 return;
             }
-            companionScanNextServiceIntent = intent;
+            companionScanNextDeviceType = type;
         }
 
         if (SDK_INT >= Build.VERSION_CODES.S) {
@@ -361,7 +359,7 @@ public class MainActivity extends AppCompatActivity {
 
             scanDevicePopupMenu.setOnDismissListener((m) -> {
                 synchronized (this) {
-                    companionScanNextServiceIntent = null;
+                    companionScanNextDeviceType = -1;
                     scanDevicePopupMenu = null;
                 }
                 bluetoothAdapter.cancelDiscovery();
@@ -414,13 +412,13 @@ public class MainActivity extends AppCompatActivity {
             public void onFailure(CharSequence error) {
                 // Handle the failure.
                 synchronized (this) {
-                    companionScanNextServiceIntent = null;
+                    companionScanNextDeviceType = -1;
                 }
             }
         };
 
         if (SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            deviceManager.associate(builder2.build(), (r) -> {r.run();}, callback);
+            deviceManager.associate(builder2.build(), Runnable::run, callback);
         }
         else {
             deviceManager.associate(builder2.build(), callback, null);
@@ -456,54 +454,17 @@ public class MainActivity extends AppCompatActivity {
                     connectDeviceAfterCompanionScan(device);
                     scanDevicePopupMenu.dismiss();
                 }
-            } else if (action.equals(ACTION_SERVICE_STATE_CHANGED)) {
-                int state = intent.getIntExtra(EXTRA_SERVICE_STATE, -1);
-                if (state == SERVICE_STATE_IDLE) {
-                    button.setText(R.string.connect);
-                    pm5BluetoothConnected = false;
-                } else if (state == SERVICE_STATE_CONNECTED) {
-                    button.setText(R.string.disconnect);
-                    pm5BluetoothConnected = true;
-                } else {
-                    button.setText(R.string.connecting);
-                    pm5BluetoothConnected = false;
-                }
-            } else if (action.equals(ACTION_HRM_SERVICE_STATE_CHANGED)) {
-                int state = intent.getIntExtra(EXTRA_SERVICE_STATE, -1);
-                if (state == SERVICE_STATE_IDLE) {
-                    buttonHrm.setText(R.string.connect_hrm_btn_text);
-                    hrmBluetoothConnected = false;
-                } else if (state == SERVICE_STATE_CONNECTED) {
-                    buttonHrm.setText(R.string.disconnect);
-                    hrmBluetoothConnected = true;
-                } else {
-                    buttonHrm.setText(R.string.connecting);
-                    hrmBluetoothConnected = false;
-                }
-            } else if (action.equals(ACTION_BIKE_SERVICE_STATE_CHANGED)) {
-                int state = intent.getIntExtra(EXTRA_SERVICE_STATE, -1);
-                if (state == SERVICE_STATE_IDLE) {
-                    buttonBike.setText(R.string.connect_bike_btn_text);
-                    bikeBluetoothConnected = false;
-                } else if (state == SERVICE_STATE_CONNECTED) {
-                    buttonBike.setText(R.string.disconnect);
-                    bikeBluetoothConnected = true;
-                } else {
-                    buttonBike.setText(R.string.connecting);
-                    bikeBluetoothConnected = false;
-                }
-            } else if (action.equals(ACTION_OARLOCK_SERVICE_STATE_CHANGED)) {
-                int state = intent.getIntExtra(EXTRA_SERVICE_STATE, -1);
-                if (state == SERVICE_STATE_IDLE) {
-                    buttonOarlock.setText(R.string.connect_oarlock_btn_text);
-                    oarlockBluetoothConnected = false;
-                } else if (state == SERVICE_STATE_CONNECTED) {
-                    buttonOarlock.setText(R.string.disconnect);
-                    oarlockBluetoothConnected = true;
-                } else {
-                    buttonOarlock.setText(R.string.connecting);
-                    oarlockBluetoothConnected = false;
-                }
+            } else if (action.equals(ACTION_BLUETOOTH_SERVICE_STATE_CHANGED)) {
+                int[] states = intent.getIntArrayExtra(EXTRA_SERVICE_STATE);
+                int[] deviceTypes = intent.getIntArrayExtra(EXTRA_DEVICE_TYPE);
+                Parcelable[] devices = intent.getParcelableArrayExtra(EXTRA_DEVICE);
+
+                statusTextView.setText(String.format("Connected %d devices", states.length));
+
+                // Allocates a new array when the list of devices changes.
+                // If this changes, see assignment of devicesConnectedListedInMenu
+                devicesConnected = Arrays.stream(devices).map(d -> (BluetoothDevice) d)
+                        .toArray(BluetoothDevice[]::new);
             } else if (action.equals(ACTION_RATE_UPDATE)) {
                 rateTextView.setText(String.valueOf(intent.getIntExtra(EXTRA_RATE, 0)));
             } else if (action.equals(ACTION_HR_VALUE_UPDATE)) {
@@ -516,19 +477,17 @@ public class MainActivity extends AppCompatActivity {
     };
 
     private void connectDeviceAfterCompanionScan(BluetoothDevice device) {
-        Intent intent;
+        final int type;
         synchronized (this) {
-            intent = companionScanNextServiceIntent;
-            companionScanNextServiceIntent = null;
+            type = companionScanNextDeviceType;
+            companionScanNextDeviceType = -1;
         }
 
-
-        if (intent != null) {
-            intent.putExtra(EXTRA_DEVICE, device);
-            startService(intent);
+        if (type != -1) {
+            connectToDevice(device, type);
         }
-
     }
+
     private static final int SELECT_DEVICE_REQUEST_CODE = 42;
 
     @Override

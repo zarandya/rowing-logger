@@ -4,15 +4,17 @@ import static com.github.zarandya.heartticks.db.BluetoothDeviceType.HRM;
 import static java.util.TimeZone.getTimeZone;
 
 import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothDevice;
 import android.content.Intent;
 
+import androidx.annotation.NonNull;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.UUID;
 
-public class BluetoothOarlockService extends BaseBluetoothService {
+public class BluetoothOarlockConnectionManager extends BluetoothConnectionManager {
 
     public static final String ACTION_OARLOCK_SERVICE_STATE_CHANGED = "action_oarlock_service_state_changed";
 
@@ -30,19 +32,8 @@ public class BluetoothOarlockService extends BaseBluetoothService {
     static final UUID OARLOCK_2_CHARACTERISTIC_3_UUID = UUID.fromString("12630003-dd25-497d-9854-9b6c02c77054");
     static final UUID OARLOCK_2_CHARACTERISTIC_4_UUID = UUID.fromString("12630200-dd25-497d-9854-9b6c02c77054");
 
-    @Override
-    protected String getNotificationChannelId() {
-        return CHANNEL_ID;
-    }
-
-    @Override
-    protected int getTimestampWritePeriod() {
-        return 5000;
-    }
-
-    @Override
-    public void onCreate() {
-        super.onCreate();
+    public BluetoothOarlockConnectionManager(@NonNull BluetoothService service, @NonNull BluetoothDevice device) {
+        super(service, device);
 
         registerCharacteristic(OARLOCK_SERVICE_1_UUID, OARLOCK_1_CHARACTERISTIC_1_UUID, true);
         registerCharacteristicForReadOnce(OARLOCK_SERVICE_1_UUID, OARLOCK_1_CHARACTERISTIC_2_UUID);
@@ -54,6 +45,10 @@ public class BluetoothOarlockService extends BaseBluetoothService {
         registerCharacteristicForReadOnce(OARLOCK_SERVICE_2_UUID, OARLOCK_2_CHARACTERISTIC_4_UUID);
     }
 
+    @Override
+    protected int getTimestampWritePeriod() {
+        return 5000;
+    }
 
     @Override
     protected String generateOutputFilename(String base) {
@@ -71,12 +66,5 @@ public class BluetoothOarlockService extends BaseBluetoothService {
 
     @Override
     protected int getDeviceType() { return HRM; }
-
-    @Override
-    protected void sendState() {
-        Intent broadcast = new Intent(ACTION_OARLOCK_SERVICE_STATE_CHANGED);
-        broadcast.putExtra(EXTRA_SERVICE_STATE, getState());
-        LocalBroadcastManager.getInstance(this).sendBroadcast(broadcast);
-    }
 
 }

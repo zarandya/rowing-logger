@@ -38,35 +38,27 @@
         android:id="@+id/share_btn"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Share"
+        android:text="@string/share_btn_text"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
 
     <Button
-        android:id="@+id/connect_hrm_button"
+        android:id="@+id/disconnect_button"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="6dp"
-        android:text="@string/connect_hrm_btn_text"
-        app:layout_constraintStart_toEndOf="@+id/accel_log_btn"
-        app:layout_constraintTop_toTopOf="parent" />
-
-    <Button
-        android:id="@+id/connect_bike_button"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="6dp"
-        android:text="@string/connect_bike_btn_text"
+        android:text="@string/disconnect_btn_text"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/button" />
 
-    <Button
-        android:id="@+id/connect_oarlock_button"
+    <TextView
+        android:id="@+id/status_text_view"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="6dp"
-        android:text="@string/connect_oarlock_btn_text"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/connect_bike_button" />
+        android:text=""
+        android:textScaleX="1"
+        android:textSize="14sp"
+        app:layout_constraintLeft_toRightOf="@id/disconnect_button"
+        app:layout_constraintTop_toTopOf="@id/disconnect_button" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

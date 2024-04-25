@@ -4,21 +4,23 @@ import static com.github.zarandya.heartticks.db.BluetoothDeviceType.HRM;
 import static java.util.TimeZone.getTimeZone;
 
 import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.content.Intent;
 
+import androidx.annotation.NonNull;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.UUID;
 
-public class BluetoothHrmService extends BaseBluetoothService {
+public class BluetoothHrmConnectionManager extends BluetoothConnectionManager {
 
-    public static final String ACTION_CONNECT_BUTTON_PRESSED = BaseBluetoothService.ACTION_CONNECT_BUTTON_PRESSED;
-    public static final String ACTION_QUERY_STATE = BaseBluetoothService.ACTION_QUERY_STATE;
+    public static final String ACTION_CONNECT_BUTTON_PRESSED = BluetoothConnectionManager.ACTION_CONNECT_BUTTON_PRESSED;
+    public static final String ACTION_QUERY_STATE = BluetoothConnectionManager.ACTION_QUERY_STATE;
     public static final String ACTION_HRM_SERVICE_STATE_CHANGED = "action_hrm_service_state_changed";
-    public static final String EXTRA_SERVICE_STATE = BaseBluetoothService.EXTRA_SERVICE_STATE;
+    public static final String EXTRA_SERVICE_STATE = BluetoothConnectionManager.EXTRA_SERVICE_STATE;
 
     public static final String ACTION_HR_VALUE_UPDATE = "action_hr_value_changed";
     public static final String EXTRA_HR_VALUE = "extra_hr_value";
@@ -29,23 +31,15 @@ public class BluetoothHrmService extends BaseBluetoothService {
     public static final String CHANNEL_ID = "io.github.zarandya.beatrate.BLUETOOTH_HRM_SERVICE_NOTIFICATION";
     private static final int SELECT_DEVICE_REQUEST_CODE_HRM = 0;
 
-    @Override
-    protected String getNotificationChannelId() {
-        return CHANNEL_ID;
+    public BluetoothHrmConnectionManager(@NonNull BluetoothService service, @NonNull BluetoothDevice device) {
+        super(service, device);
+        registerCharacteristic(HR_SERVICE_UUID, HR_CHARACTERISTIC_UUID, true);
     }
 
     @Override
     protected int getTimestampWritePeriod() {
         return 5000;
     }
-
-    @Override
-    public void onCreate() {
-        super.onCreate();
-
-        registerCharacteristic(HR_SERVICE_UUID, HR_CHARACTERISTIC_UUID, true);
-    }
-
 
     @Override
     protected String generateOutputFilename(String base) {
@@ -65,7 +59,7 @@ public class BluetoothHrmService extends BaseBluetoothService {
                         } else {
                             hr = ((((int) value[2]) << 8) & 0xFF) | (((int) value[1]) & 0xFF);
                         }
-                        sendHRValue(hr);
+                        service.sendHRValue(hr);
                     }
                     catch (Exception e) {}
     }
@@ -77,18 +71,5 @@ public class BluetoothHrmService extends BaseBluetoothService {
 
     @Override
     protected int getDeviceType() { return HRM; }
-
-    @Override
-    protected void sendState() {
-        Intent broadcast = new Intent(ACTION_HRM_SERVICE_STATE_CHANGED);
-        broadcast.putExtra(EXTRA_SERVICE_STATE, getState());
-        LocalBroadcastManager.getInstance(this).sendBroadcast(broadcast);
-    }
-
-    private void sendHRValue(int hr) {
-        Intent broadcast = new Intent(ACTION_HR_VALUE_UPDATE);
-        broadcast.putExtra(EXTRA_HR_VALUE, hr);
-        LocalBroadcastManager.getInstance(this).sendBroadcast(broadcast);
-    }
 
 }
