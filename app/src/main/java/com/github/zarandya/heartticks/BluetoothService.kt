@@ -11,6 +11,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Build.VERSION.SDK_INT
 import android.os.IBinder
+import androidx.annotation.RequiresPermission
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.github.zarandya.heartticks.BluetoothConnectionManager.SERVICE_STATE_CONNECTED
@@ -63,6 +64,7 @@ class BluetoothService: Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         if (intent.action == ACTION_CONNECT_DEVICE) {
             val device = intent.getParcelableExtra<BluetoothDevice>(MainActivity.EXTRA_DEVICE)
@@ -119,6 +121,8 @@ class BluetoothService: Service() {
         if (connectionManagers.isEmpty()) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         }
+
+        sendState();
     }
 
     fun sendHRValue(hr: Int) {

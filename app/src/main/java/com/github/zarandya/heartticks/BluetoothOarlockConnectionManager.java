@@ -1,6 +1,7 @@
 package com.github.zarandya.heartticks;
 
 import static com.github.zarandya.heartticks.db.BluetoothDeviceType.HRM;
+import static com.github.zarandya.heartticks.db.BluetoothDeviceType.OARLOCK;
 import static java.util.TimeZone.getTimeZone;
 
 import android.annotation.SuppressLint;
@@ -35,13 +36,13 @@ public class BluetoothOarlockConnectionManager extends BluetoothConnectionManage
     public BluetoothOarlockConnectionManager(@NonNull BluetoothService service, @NonNull BluetoothDevice device) {
         super(service, device);
 
-        registerCharacteristic(OARLOCK_SERVICE_1_UUID, OARLOCK_1_CHARACTERISTIC_1_UUID, true);
-        registerCharacteristicForReadOnce(OARLOCK_SERVICE_1_UUID, OARLOCK_1_CHARACTERISTIC_2_UUID);
-        registerCharacteristicForReadOnce(OARLOCK_SERVICE_1_UUID, OARLOCK_1_CHARACTERISTIC_3_UUID);
+        //registerCharacteristic(OARLOCK_SERVICE_1_UUID, OARLOCK_1_CHARACTERISTIC_1_UUID, true);
+        //registerCharacteristicForReadOnce(OARLOCK_SERVICE_1_UUID, OARLOCK_1_CHARACTERISTIC_2_UUID);
+        //registerCharacteristicForReadOnce(OARLOCK_SERVICE_1_UUID, OARLOCK_1_CHARACTERISTIC_3_UUID);
 
         registerCharacteristic(OARLOCK_SERVICE_2_UUID, OARLOCK_2_CHARACTERISTIC_1_UUID, true);
-        registerCharacteristic(OARLOCK_SERVICE_2_UUID, OARLOCK_2_CHARACTERISTIC_2_UUID, true);
-        registerCharacteristic(OARLOCK_SERVICE_2_UUID, OARLOCK_2_CHARACTERISTIC_3_UUID, true);
+        //registerCharacteristic(OARLOCK_SERVICE_2_UUID, OARLOCK_2_CHARACTERISTIC_2_UUID, true);
+        //registerCharacteristic(OARLOCK_SERVICE_2_UUID, OARLOCK_2_CHARACTERISTIC_3_UUID, true);
         registerCharacteristicForReadOnce(OARLOCK_SERVICE_2_UUID, OARLOCK_2_CHARACTERISTIC_4_UUID);
     }
 
@@ -65,6 +66,6 @@ public class BluetoothOarlockConnectionManager extends BluetoothConnectionManage
     }
 
     @Override
-    protected int getDeviceType() { return HRM; }
+    protected int getDeviceType() { return OARLOCK; }
 
 }

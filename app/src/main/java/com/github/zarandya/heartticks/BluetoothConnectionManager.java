@@ -2,7 +2,9 @@ package com.github.zarandya.heartticks;
 
 import static android.Manifest.permission.BLUETOOTH_CONNECT;
 import static android.bluetooth.BluetoothGatt.GATT_SUCCESS;
+import static android.bluetooth.BluetoothGattCharacteristic.PROPERTY_NOTIFY;
 import static android.bluetooth.BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE;
+import static android.bluetooth.BluetoothGattDescriptor.ENABLE_INDICATION_VALUE;
 import static android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE;
 import static android.bluetooth.BluetoothProfile.STATE_CONNECTED;
 import static android.bluetooth.BluetoothProfile.STATE_DISCONNECTED;
@@ -23,6 +25,7 @@ import android.os.Build;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.RequiresPermission;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
@@ -48,6 +51,7 @@ public abstract class BluetoothConnectionManager {
     public static final int SERVICE_STATE_SUBSCRIBING = 2;
     public static final int SERVICE_STATE_CONNECTED = 3;
     public static final int SERVICE_STATE_DISCONNECTING = 4;
+    public static final int SERVICE_STATE_FINISHED = 5;
 
     public static final String ACTION_CONNECT_BUTTON_PRESSED = "action_connect_button_pressed";
     public static final String ACTION_QUERY_STATE = "sction_query_state";
@@ -55,7 +59,7 @@ public abstract class BluetoothConnectionManager {
 
     public static final int NOTIFICATION_ID = 83;
 
-    private static final UUID GATT_CLIENT_CONFIGURATION_CHARACTERISTIC_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
+    public static final UUID GATT_CLIENT_CONFIGURATION_CHARACTERISTIC_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
 
 
     private int state = SERVICE_STATE_IDLE;
@@ -90,6 +94,7 @@ public abstract class BluetoothConnectionManager {
 
     protected abstract String generateOutputFilename(String Base);
 
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
     public void startConnect() {
         setState(SERVICE_STATE_CONNECTING);
         try {
@@ -112,8 +117,10 @@ public abstract class BluetoothConnectionManager {
     private List<Pair<UUID, UUID>> requiredCharacteristics = new ArrayList<>();
     private List<Pair<UUID, UUID>> optionalCharacteristics = new ArrayList<>();
     private List<Pair<UUID, UUID>> connectedCharacteristics = new ArrayList<>();
+    private List<Pair<UUID, UUID>> characteristicsToReadOnce = new ArrayList<>();
     private int requiredSubscribingIndx = 0;
     private int optionalSubscribingIndx = 0;
+    private int readingOnceIndx = 0;
 
     protected void registerCharacteristic(UUID serviceUUID, UUID uuid, boolean required) {
         if (required)
@@ -123,9 +130,10 @@ public abstract class BluetoothConnectionManager {
     }
 
     protected void registerCharacteristicForReadOnce(UUID serviceUUID, UUID uuid) {
-        // TODO implement this
+        characteristicsToReadOnce.add(new Pair<>(serviceUUID, uuid));
     }
 
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
     public void startDisconnect() {
         setState(SERVICE_STATE_DISCONNECTING);
         try {
@@ -137,11 +145,10 @@ public abstract class BluetoothConnectionManager {
         }
     }
 
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
     private void errDisconnect() {
         final BluetoothGatt g = bluetoothGatt;
         if (g != null) {
-            if (ActivityCompat.checkSelfPermission(service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
-                throw new RuntimeException("The service should not have started with missing permissions");
             g.close();
         }
         bluetoothGatt = null;
@@ -151,19 +158,19 @@ public abstract class BluetoothConnectionManager {
         }
         gattCallback = null;
         sendFileToShare();
-        setState(SERVICE_STATE_IDLE);
+        setState(SERVICE_STATE_FINISHED);
     }
 
 
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
     private synchronized void connect(BluetoothDevice device) {
         if (gattCallback == null)
             return;
-        if (ActivityCompat.checkSelfPermission(service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
-            throw new RuntimeException("The service should not have started with missing permissions");
         bluetoothGatt = device.connectGatt(service, false, gattCallback);
         setState(SERVICE_STATE_SUBSCRIBING);
     }
 
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
     protected void startSubscribe(BluetoothGatt gatt) {
         setState(SERVICE_STATE_SUBSCRIBING);
         requiredSubscribingIndx = 0;
@@ -171,6 +178,7 @@ public abstract class BluetoothConnectionManager {
         subscribeToNext(gatt);
     }
 
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
     private void onSuccessfulSubscribe(BluetoothGatt gatt, UUID serviceUUID, UUID uuid) {
         if (requiredSubscribingIndx < requiredCharacteristics.size()) {
             Pair<UUID, UUID> ch = requiredCharacteristics.get(requiredSubscribingIndx);
@@ -189,8 +197,27 @@ public abstract class BluetoothConnectionManager {
         }
     }
 
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
     private void subscribeToNext(BluetoothGatt gatt) {
-        if (requiredSubscribingIndx < requiredCharacteristics.size()) {
+        if (readingOnceIndx < characteristicsToReadOnce.size()) {
+            boolean characteristicExists = false;
+            while (readingOnceIndx < characteristicsToReadOnce.size() &&
+                    !characteristicExists) {
+                Pair<UUID, UUID> ch = characteristicsToReadOnce.get(readingOnceIndx);
+                ++readingOnceIndx;
+                BluetoothGattService s = gatt.getService(ch.getFirst());
+                if (s == null) continue;
+                BluetoothGattCharacteristic c = s.getCharacteristic(ch.getSecond());
+                if (c == null) continue;
+                characteristicExists = true;
+                gatt.readCharacteristic(c);
+            }
+
+            if (!characteristicExists) {
+                subscribeToNext(gatt);
+            }
+        }
+        else if (requiredSubscribingIndx < requiredCharacteristics.size()) {
             Pair<UUID, UUID> ch = requiredCharacteristics.get(requiredSubscribingIndx);
             subscribe(gatt, ch.getFirst(), ch.getSecond());
         } else {
@@ -210,6 +237,7 @@ public abstract class BluetoothConnectionManager {
         }
     }
 
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
     private boolean subscribe(BluetoothGatt gatt, UUID serviceId, UUID characteristicId) {
         final BluetoothGattService service = gatt.getService(serviceId);
         if (service == null)
@@ -220,14 +248,15 @@ public abstract class BluetoothConnectionManager {
         final BluetoothGattDescriptor descriptor = characteristic.getDescriptor(GATT_CLIENT_CONFIGURATION_CHARACTERISTIC_UUID);
         if (descriptor == null)
             return false;
-        if (ActivityCompat.checkSelfPermission(this.service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
-            throw new RuntimeException("The service should not have started with missing permissions");
         gatt.setCharacteristicNotification(characteristic, true);
-        descriptor.setValue(ENABLE_NOTIFICATION_VALUE);
+        descriptor.setValue(((characteristic.getProperties() & PROPERTY_NOTIFY) == PROPERTY_NOTIFY)
+                ? ENABLE_NOTIFICATION_VALUE
+                : ENABLE_INDICATION_VALUE);
         gatt.writeDescriptor(descriptor);
         return true;
     }
 
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
     private boolean onSuccessfulUnsubscribe(BluetoothGatt gatt, UUID serviceUUID, UUID uuid) {
         Pair<UUID, UUID> ch = connectedCharacteristics.get(0);
         if (serviceUUID.equals(ch.getFirst()) && uuid.equals(ch.getSecond())) {
@@ -242,6 +271,7 @@ public abstract class BluetoothConnectionManager {
         return false;
     }
 
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
     private boolean unsubscribe(BluetoothGatt gatt, UUID serviceId, UUID characteristicId) {
         final BluetoothGattService service = gatt.getService(serviceId);
         if (service == null)
@@ -252,8 +282,6 @@ public abstract class BluetoothConnectionManager {
         final BluetoothGattDescriptor descriptor = characteristic.getDescriptor(GATT_CLIENT_CONFIGURATION_CHARACTERISTIC_UUID);
         if (descriptor == null)
             return false;
-        if (ActivityCompat.checkSelfPermission(this.service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
-            throw new RuntimeException("The service should not have started with missing permissions");
         gatt.setCharacteristicNotification(characteristic, false);
         descriptor.setValue(DISABLE_NOTIFICATION_VALUE);
         gatt.writeDescriptor(descriptor);
@@ -267,10 +295,24 @@ public abstract class BluetoothConnectionManager {
     protected void characteristicChanged(BluetoothGattCharacteristic characteristic) {
     }
 
+    protected void onCharacteristicRead(BluetoothGattCharacteristic characteristic, int status) {
+    }
+    protected void onCharacteristicWrite(BluetoothGattCharacteristic characteristic, int status) {
+    }
+    protected void onDescriptorRead(BluetoothGattDescriptor descriptor, int status) {
+    }
+
+    protected boolean onDescriptorWrite(BluetoothGattDescriptor descriptor, int status) {
+        // continue with disconnect
+        return true;
+    }
+
+
     private void createGattCallback(String filename, String mac) {
         try {
             gattCallback = new GattoolFileWriter(filename, "[" + mac.toLowerCase() + "][LE]> ") {
                 @Override
+                @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
                 protected void editCharacteristicValueBeforeLog(BluetoothGattCharacteristic characteristic, byte[] value) {
                     BluetoothConnectionManager.this.editCharacteristicValueBeforeLog(characteristic, value);
                 }
@@ -288,12 +330,11 @@ public abstract class BluetoothConnectionManager {
                 }
 
                 @Override
+                @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
                 public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
                     super.onConnectionStateChange(gatt, status, newState);
                     Log.d("GATT", "CONNECTION STATE CHANGE newState: " + newState + " status: " + status);
                     if (newState == STATE_CONNECTED) {
-                        if (ActivityCompat.checkSelfPermission(service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
-                            throw new RuntimeException("The service should not have started with missing permissions");
                         gatt.discoverServices();
                     }
                     if (newState == STATE_DISCONNECTED && (state == SERVICE_STATE_CONNECTED || state == SERVICE_STATE_SUBSCRIBING)) {
@@ -302,6 +343,7 @@ public abstract class BluetoothConnectionManager {
                 }
 
                 @Override
+                @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
                 public void onServicesDiscovered(BluetoothGatt gatt, int status) {
                     super.onServicesDiscovered(gatt, status);
                     Log.d("GATT", "SERVICES DISCOVERED status: " + status);
@@ -321,8 +363,11 @@ public abstract class BluetoothConnectionManager {
                 }
 
                 @Override
+                @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
                 public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
                     super.onCharacteristicRead(gatt, characteristic, status);
+                    BluetoothConnectionManager.this.onCharacteristicRead(characteristic, status);
+                    subscribeToNext(gatt);
                     Log.d("GATT", "CHARACTERISTIC READ: " + characteristic + " status: " + status);
                     Log.d("CHARACTERISTIC", characteristic.getStringValue(0));
                 }
@@ -330,6 +375,7 @@ public abstract class BluetoothConnectionManager {
                 @Override
                 public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
                     super.onCharacteristicWrite(gatt, characteristic, status);
+                    BluetoothConnectionManager.this.onCharacteristicWrite(characteristic, status);
                     Log.d("GATT", "CHARACTERISTIC WRITE: " + characteristic + " status: " + status);
                 }
 
@@ -347,13 +393,17 @@ public abstract class BluetoothConnectionManager {
                 @Override
                 public void onDescriptorRead(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
                     super.onDescriptorRead(gatt, descriptor, status);
+                    BluetoothConnectionManager.this.onDescriptorRead(descriptor, status);
                     Log.d("GATT", "DESCRIPTOR READ: " + descriptor + " status: " + status);
                 }
 
                 @Override
+                @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
                 public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
                     super.onDescriptorWrite(gatt, descriptor, status);
                     Log.d("GATT", "DESCRIPTOR WRITE: " + descriptor.getUuid() + "value: " + Arrays.toString(descriptor.getValue()) + " status: " + status);
+                    if (!BluetoothConnectionManager.this.onDescriptorWrite(descriptor, status))
+                        return;
                     if (status == GATT_SUCCESS) {
                         if (state == SERVICE_STATE_SUBSCRIBING) {
                             UUID serviceUUID = descriptor.getCharacteristic().getService().getUuid();
@@ -364,15 +414,13 @@ public abstract class BluetoothConnectionManager {
                             UUID uuid = descriptor.getCharacteristic().getUuid();
                             boolean finishDisconnect = onSuccessfulUnsubscribe(gatt, serviceUUID, uuid);
                             if (finishDisconnect) {
-                                if (ActivityCompat.checkSelfPermission(service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
-                                    throw new RuntimeException("The service should not have started with missing permissions");
                                 bluetoothGatt.disconnect();
                                 bluetoothGatt.close();
                                 bluetoothGatt = null;
                                 gattCallback.close();
                                 gattCallback = null;
                                 sendFileToShare();
-                                setState(SERVICE_STATE_IDLE);
+                                setState(SERVICE_STATE_FINISHED);
                             }
                         }
                     } else {
@@ -407,15 +455,17 @@ public abstract class BluetoothConnectionManager {
 
     private volatile long stateChangeCounter = 0;
 
-    private void setState(final int s) {
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
+    protected void setState(final int s) {
         Log.d("STATE", String.valueOf(s));
         try {
             state = s;
             ++stateChangeCounter;
             final long stateChangeCount = stateChangeCounter;
-            if (s != SERVICE_STATE_CONNECTED && s != SERVICE_STATE_IDLE) {
+            if (s != SERVICE_STATE_CONNECTED && s != SERVICE_STATE_IDLE && s != SERVICE_STATE_FINISHED) {
                 new Timer().schedule(new TimerTask() {
                     @Override
+                    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
                     public void run() {
                         Log.d("TIMEOUT", "state: " + state + " s: " + s + " counter: " + stateChangeCounter + " count: " + stateChangeCount);
                         if (stateChangeCounter == stateChangeCount) {
@@ -428,7 +478,7 @@ public abstract class BluetoothConnectionManager {
                 saveDeviceToDatabase();
             }
             service.sendState();
-            if (s == SERVICE_STATE_IDLE) {
+            if (s == SERVICE_STATE_FINISHED) {
                 service.onDisconnectFinished(this);
             }
         } catch (Exception e) {
@@ -448,6 +498,7 @@ public abstract class BluetoothConnectionManager {
         LocalBroadcastManager.getInstance(service).sendBroadcast(broadcast);
     }
 
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
     private void saveDeviceToDatabase() {
         //if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
         //    throw new RuntimeException("The service should not have started with missing permissions");
@@ -455,8 +506,6 @@ public abstract class BluetoothConnectionManager {
         //device.createBond();
 
         new Thread(() -> {
-            if (ActivityCompat.checkSelfPermission(service, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
-                throw new RuntimeException("The service should not have started with missing permissions");
             int addressType;
             try {
                 Method meth = BluetoothDevice.class.getMethod("getAddressType");

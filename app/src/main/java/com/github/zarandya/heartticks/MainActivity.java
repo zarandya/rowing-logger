@@ -1,6 +1,7 @@
 package com.github.zarandya.heartticks;
 
 import androidx.annotation.RequiresApi;
+import androidx.annotation.RequiresPermission;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -8,6 +9,7 @@ import androidx.core.content.FileProvider;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
@@ -214,14 +216,15 @@ public class MainActivity extends AppCompatActivity {
         unregisterReceiver(receiver);
     }
 
+    @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
     private void popupBluetoothDeviceSelector(View view, List<SavedBluetoothDevice> savedDevices, int kind) {
         final String prefix;
         switch (kind) {
             case PM5:
-                prefix = "PM5 ";
+                prefix = "";
                 break;
             case OARLOCK:
-                prefix = "EmPower";
+                prefix = ""; // EmPower
                 break;
             default:
                 prefix = "";
@@ -229,10 +232,6 @@ public class MainActivity extends AppCompatActivity {
 
         PopupMenu menu = new PopupMenu(this, view);
         Menu menuBuilder = menu.getMenu();
-
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PERMISSION_GRANTED) {
-            return;
-        }
 
         List<BluetoothDevice> bondedDevices = bluetoothAdapter.getBondedDevices()
                 .stream().filter((dev) -> dev.getName().startsWith(prefix))
@@ -334,9 +333,6 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
-            throw new RuntimeException("The function should not have been called with missing permissions");
-
         synchronized (this) {
             if (companionScanNextDeviceType != -1) {
                 Log.e("Companion", "A companion scan is already running");
@@ -346,6 +342,9 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (SDK_INT >= Build.VERSION_CODES.S) {
+            if (ActivityCompat.checkSelfPermission(this, BLUETOOTH_CONNECT) != PERMISSION_GRANTED)
+                throw new RuntimeException("The function should not have been called with missing permissions");
+
             scanAddress = deviceAddress;
 
             synchronized (this) {
@@ -428,12 +427,11 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private final BroadcastReceiver receiver = new BroadcastReceiver() {
+        @RequiresPermission("android.permission.BLUETOOTH_CONNECT")
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
             Log.d("BLUETOOTH", action);
             if (BluetoothDevice.ACTION_FOUND.equals(action)) {
-                if (ActivityCompat.checkSelfPermission(MainActivity.this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
-                    return;
                 // Discovery has found a device. Get the BluetoothDevice
                 // object and its info from the Intent.
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
@@ -498,9 +496,6 @@ public class MainActivity extends AppCompatActivity {
             // User has chosen to pair with the Bluetooth device.
             BluetoothDevice deviceToPair =
                     data.getParcelableExtra(CompanionDeviceManager.EXTRA_DEVICE);
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                return;
-            }
 
             // ... Continue interacting with the paired device.
             connectDeviceAfterCompanionScan(deviceToPair);
